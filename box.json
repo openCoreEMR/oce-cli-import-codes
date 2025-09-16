@@ -1,0 +1,23 @@
+{
+    "output": "build/oce-import-codes.phar",
+    "chmod": "0755",
+    "directories": [
+        "src"
+    ],
+    "files": [
+        "bin/oce-import-codes"
+    ],
+    "finder": [
+        {
+            "name": "*.php",
+            "exclude": ["Tests"],
+            "in": "vendor"
+        }
+    ],
+    "compactors": [
+        "KevinGH\\Box\\Compactor\\Php"
+    ],
+    "compression": "GZ",
+    "main": "bin/oce-import-codes",
+    "shebang": "#!/usr/bin/env php"
+}

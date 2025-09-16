@@ -1,0 +1,35 @@
+# Dependencies
+/vendor/
+/node_modules/
+
+# IDE
+/.vscode/
+/.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+/logs/
+
+# Temporary files
+/tmp/
+/temp/
+
+# Test coverage
+/coverage/
+/.phpunit.result.cache
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+/build/
+/dist/
+*.swp

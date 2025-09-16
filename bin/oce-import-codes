@@ -1,0 +1,59 @@
+#!/usr/bin/env php
+<?php
+
+/**
+ * Standalone CLI tool for importing standardized code tables into OpenEMR
+ *
+ * @package   OpenCoreEMR\CLI\ImportCodes
+ * @link      https://opencoreemr.com
+ * @author    Michael A. Smith <michael@opencoreemr.com>
+ * @copyright Copyright (c) 2025 OpenCoreEMR Inc
+ * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
+ */
+
+// Ensure we're running from CLI
+if (php_sapi_name() !== 'cli') {
+    raise RuntimeError('This tool can only be run from the command line');
+}
+
+// Autoload: PHAR or Composer
+if (Phar::running()) {
+    require_once 'phar://oce-import-codes.phar/vendor/autoload.php';
+} else {
+    // Find autoload.php for development
+    $autoloadPaths = [
+        __DIR__ . '/../vendor/autoload.php',
+        __DIR__ . '/../../../autoload.php',
+        __DIR__ . '/../../../../autoload.php',
+        __DIR__ . '/../../../../../autoload.php',
+    ];
+
+    $autoloadFound = false;
+    foreach ($autoloadPaths as $autoloadPath) {
+        if (file_exists($autoloadPath)) {
+            require_once $autoloadPath;
+            $autoloadFound = true;
+            break;
+        }
+    }
+
+    if (!$autoloadFound) {
+        echo "Error: Could not find vendor/autoload.php. Please run 'composer install'.\n";
+        exit(1);
+    }
+}
+
+use OpenCoreEMR\CLI\ImportCodes\Command\ImportCodesCommand;
+use Symfony\Component\Console\Application;
+
+try {
+    $application = new Application();
+    $application->setName('OpenCoreEMR Codes Import CLI');
+    $application->setVersion('1.0.0');
+    $application->add(new ImportCodesCommand());
+    $application->setDefaultCommand('import', true);
+    $application->run();
+} catch (Exception $e) {
+    echo "Error: " . $e->getMessage() . "\n";
+    exit(1);
+}
