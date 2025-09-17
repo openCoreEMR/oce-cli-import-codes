@@ -15,6 +15,7 @@ namespace OpenCoreEMR\CLI\ImportCodes\Command;
 
 use OpenCoreEMR\CLI\ImportCodes\Service\CodeImporter;
 use OpenCoreEMR\CLI\ImportCodes\Service\OpenEMRConnector;
+use OpenCoreEMR\CLI\ImportCodes\Service\MetadataDetector;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputDefinition;
 use Symfony\Component\Console\Input\InputInterface;
@@ -30,58 +31,48 @@ class ImportCodesCommand extends Command
 
     private CodeImporter $importer;
     private OpenEMRConnector $connector;
+    private MetadataDetector $detector;
 
-    public function __construct(CodeImporter $importer = null, OpenEMRConnector $connector = null)
+    public function __construct(?CodeImporter $importer = null, ?OpenEMRConnector $connector = null, ?MetadataDetector $detector = null)
     {
         parent::__construct();
         $this->importer = $importer ?? new CodeImporter();
         $this->connector = $connector ?? new OpenEMRConnector();
+        $this->detector = $detector ?? new MetadataDetector();
     }
 
     protected function configure()
     {
         $this
             ->setName('import')
-            ->setDescription("Import standardized code tables (RXNORM, SNOMED, ICD, CQM_VALUESET) into OpenEMR")
-            ->setHelp("This command imports standardized medical code tables into OpenEMR from mounted files.\n\nSupported code types: " . implode(', ', self::SUPPORTED_TYPES))
-            ->addArgument('code-type', InputArgument::REQUIRED, 'Type of codes to import (' . implode('|', self::SUPPORTED_TYPES) . ')')
+            ->setDescription("Import standardized code tables into OpenEMR with automatic detection")
+            ->setHelp("This command automatically detects code type, version, and revision from filenames and imports medical code tables into OpenEMR.\n\nSupported code types: " . implode(', ', self::SUPPORTED_TYPES))
             ->addArgument('file-path', InputArgument::REQUIRED, 'Path to the code file archive (zip file)')
+            ->addOption('code-type', null, InputOption::VALUE_REQUIRED, 'Override auto-detected code type (' . implode('|', self::SUPPORTED_TYPES) . ')')
             ->addOption('openemr-path', null, InputOption::VALUE_REQUIRED, 'Path to OpenEMR installation', '/var/www/localhost/htdocs/openemr')
             ->addOption('site', null, InputOption::VALUE_REQUIRED, 'Name of OpenEMR site', 'default')
             ->addOption('windows', 'w', InputOption::VALUE_NONE, 'Use Windows-specific processing (RXNORM only)')
-            ->addOption('us-extension', null, InputOption::VALUE_NONE, 'Import as US extension (SNOMED only)')
-            ->addOption('revision', null, InputOption::VALUE_REQUIRED, 'Revision date for tracking (YYYY-MM-DD format)')
-            ->addOption('version', null, InputOption::VALUE_REQUIRED, 'Version string for tracking')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Perform a dry run without making database changes')
             ->addOption('cleanup', null, InputOption::VALUE_NONE, 'Clean up temporary files after import')
             ->addOption('temp-dir', null, InputOption::VALUE_REQUIRED, 'Custom temporary directory path')
-            ->addUsage('RXNORM /path/to/rxnorm.zip --openemr-path=/var/www/openemr --revision=2024-01-01 --version=2024AA')
-            ->addUsage('SNOMED /path/to/snomed.zip --us-extension --openemr-path=/var/www/openemr')
-            ->addUsage('ICD10 /path/to/icd10.zip --cleanup --openemr-path=/var/www/openemr');
+            ->addUsage('/path/to/RxNorm_full_01012024.zip --openemr-path=/var/www/openemr')
+            ->addUsage('/path/to/SnomedCT_USEditionRF2_PRODUCTION_20240301T120000Z.zip')
+            ->addUsage('/path/to/icd10cm_order_2024.txt.zip --cleanup');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
 
-        $codeType = strtoupper($input->getArgument('code-type'));
         $filePath = $input->getArgument('file-path');
         $openemrPath = $input->getOption('openemr-path');
         $site = $input->getOption('site') ?? 'default';
         $isWindows = $input->getOption('windows');
-        $usExtension = $input->getOption('us-extension');
-        $revision = $input->getOption('revision');
-        $version = $input->getOption('version');
         $dryRun = $input->getOption('dry-run');
         $cleanup = $input->getOption('cleanup');
         $tempDir = $input->getOption('temp-dir');
 
-        // Validate inputs
-        if (!in_array($codeType, self::SUPPORTED_TYPES)) {
-            $io->error("Unsupported code type: $codeType. Supported types: " . implode(', ', self::SUPPORTED_TYPES));
-            return Command::FAILURE;
-        }
-
+        // Validate file exists
         if (!file_exists($filePath)) {
             $io->error("File not found: $filePath");
             return Command::FAILURE;
@@ -92,8 +83,28 @@ class ImportCodesCommand extends Command
             return Command::FAILURE;
         }
 
-        if ($revision && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $revision)) {
-            $io->error("Invalid revision format. Use YYYY-MM-DD format.");
+        // Auto-detect code type, or use override
+        $codeTypeOverride = $input->getOption('code-type');
+        if ($codeTypeOverride) {
+            $codeType = strtoupper($codeTypeOverride);
+            if (!in_array($codeType, self::SUPPORTED_TYPES)) {
+                $io->error("Unsupported code type: $codeType. Supported types: " . implode(', ', self::SUPPORTED_TYPES));
+                return Command::FAILURE;
+            }
+        } else {
+            $codeType = $this->detector->detectCodeType($filePath);
+            if (empty($codeType)) {
+                $io->error("Could not auto-detect code type from filename: " . basename($filePath));
+                $io->note("Supported filename patterns:");
+                foreach ($this->detector->getSupportedPatterns() as $type => $patterns) {
+                    $io->writeln("  <comment>$type:</comment> " . implode(', ', array_slice($patterns, 0, 2)) . (count($patterns) > 2 ? '...' : ''));
+                }
+                return Command::FAILURE;
+            }
+        }
+
+        if (!$this->detector->isSupported($filePath)) {
+            $io->error("Unsupported file format: " . basename($filePath));
             return Command::FAILURE;
         }
 
@@ -105,11 +116,17 @@ class ImportCodesCommand extends Command
             return Command::FAILURE;
         }
 
-        // Display configuration
+        // Auto-detect metadata from filename
+        $metadata = $this->detector->detectFromFile($filePath, $codeType);
+        $usExtension = $metadata['us_extension'];
+
+        // Display configuration with detected metadata
         $io->title("OpenEMR Standardized Codes Import CLI");
-        $io->section("Configuration");
+        $io->section("Auto-Detected Configuration");
         $io->definitionList(
-            ['Code Type' => $codeType],
+            ['Code Type' => $metadata['code_type'] ?: $codeType],
+            ['Version' => $metadata['version'] ?: 'Unknown'],
+            ['Revision Date' => $metadata['revision_date'] ?: 'Unknown'],
             ['File Path' => $filePath],
             ['OpenEMR Path' => $openemrPath],
             ['Site' => $site],
@@ -117,16 +134,25 @@ class ImportCodesCommand extends Command
             ['Cleanup' => $cleanup ? 'Yes' : 'No']
         );
 
+        if ($metadata['rf2']) {
+            $io->note('Detected RF2 format - using SNOMED RF2 import');
+            $codeType = 'SNOMED_RF2';
+        }
+
         if ($codeType === 'RXNORM' && $isWindows) {
             $io->note('Using Windows-specific RXNORM processing');
         }
 
-        if ($codeType === 'SNOMED' && $usExtension) {
-            $io->note('Importing as US extension');
+        if ($usExtension) {
+            $io->note('Detected US Extension');
         }
 
         if ($dryRun) {
             $io->warning('DRY RUN MODE - No database changes will be made');
+        }
+
+        if (!$metadata['supported']) {
+            $io->warning('File metadata could not be fully detected - tracking may be incomplete');
         }
 
         // Set custom temp directory if provided
@@ -167,16 +193,26 @@ class ImportCodesCommand extends Command
 
             // Step 2: Database Import
             $io->section("Step 2: Database Import");
-            $this->performImport($io, $output, $codeType, $isWindows, $usExtension, $dryRun);
+            $this->performImport($io, $output, $codeType, $isWindows, $usExtension, $dryRun, $filePath);
 
             // Step 3: Update tracking
-            if ($revision && $version && !$dryRun) {
+            if (!$dryRun) {
                 $io->section("Step 3: Update Tracking");
-                $fileChecksum = md5_file($filePath);
-                if ($this->importer->updateTracking($codeType, $revision, $version, $fileChecksum)) {
-                    $io->success("Tracking table updated successfully");
+
+                if ($metadata['supported'] && $metadata['revision_date'] && $metadata['version']) {
+                    $fileChecksum = $metadata['checksum'] ?: md5_file($filePath);
+                    if ($this->importer->updateTracking($codeType, $metadata['revision_date'], $metadata['version'], $fileChecksum)) {
+                        $io->success("Tracking table updated: {$codeType} v{$metadata['version']} ({$metadata['revision_date']})");
+                    } else {
+                        $io->warning("Failed to update tracking table");
+                    }
                 } else {
-                    $io->warning("Failed to update tracking table");
+                    $io->warning("Metadata incomplete - tracking table not updated");
+                    $io->note("Missing: " . implode(', ', array_filter([
+                        !$metadata['revision_date'] ? 'revision_date' : null,
+                        !$metadata['version'] ? 'version' : null,
+                        !$metadata['supported'] ? 'supported format' : null
+                    ])));
                 }
             }
 
@@ -202,7 +238,7 @@ class ImportCodesCommand extends Command
         }
     }
 
-    private function performImport(SymfonyStyle $io, OutputInterface $output, string $codeType, bool $isWindows, bool $usExtension, bool $dryRun): void
+    private function performImport(SymfonyStyle $io, OutputInterface $output, string $codeType, bool $isWindows, bool $usExtension, bool $dryRun, string $filePath = ''): void
     {
         $progressBar = new ProgressBar($output, 1);
         $progressBar->setFormat(' %current%/%max% [%bar%] %percent:3s%% %message%');
@@ -211,7 +247,7 @@ class ImportCodesCommand extends Command
         $progressBar->start();
 
         if (!$dryRun) {
-            $this->importer->import($codeType, $isWindows, $usExtension);
+            $this->importer->import($codeType, $isWindows, $usExtension, $filePath);
         }
 
         $progressBar->advance();
@@ -219,4 +255,5 @@ class ImportCodesCommand extends Command
         $io->newLine(2);
         $io->info("$codeType data imported successfully");
     }
+
 }

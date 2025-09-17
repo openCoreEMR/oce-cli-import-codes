@@ -75,7 +75,7 @@ oce-import-codes SNOMED /path/to/snomed.zip --openemr-path=/var/www/openemr --us
 oce-import-codes ICD10 /path/to/icd10.zip \
   --openemr-path=/var/www/openemr \
   --revision=2024-01-01 \
-  --version=2024 \
+  --code-version=2024 \
   --cleanup
 
 # Dry run to test
@@ -106,7 +106,7 @@ oce-import-codes [OPTIONS] <code-type> <file-path>
 | `--windows` | Use Windows processing (RXNORM only) | `false` |
 | `--us-extension` | Import as US extension (SNOMED only) | `false` |
 | `--revision` | Revision date (YYYY-MM-DD format) | - |
-| `--version` | Version string for tracking | - |
+| `--code-version` | Version string for tracking | - |
 | `--dry-run` | Test without database changes | `false` |
 | `--cleanup` | Remove temp files after import | `false` |
 | `--temp-dir` | Custom temporary directory | - |

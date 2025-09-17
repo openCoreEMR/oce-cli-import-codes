@@ -75,8 +75,13 @@ class CodeImporter
     /**
      * Import codes based on type
      */
-    public function import(string $codeType, bool $isWindows = false, bool $usExtension = false): void
+    public function import(string $codeType, bool $isWindows = false, bool $usExtension = false, string $filePath = ''): void
     {
+        // Auto-detect RF2 for SNOMED based on filename
+        if ($codeType === 'SNOMED' && $this->isRF2File($filePath)) {
+            $codeType = 'SNOMED_RF2';
+        }
+
         switch ($codeType) {
             case 'RXNORM':
                 $this->importRxnorm($isWindows);
@@ -102,6 +107,31 @@ class CodeImporter
             default:
                 throw new \Exception("Unsupported code type: $codeType");
         }
+    }
+
+    /**
+     * Check if SNOMED file is RF2 format based on filename
+     */
+    private function isRF2File(string $filePath): bool
+    {
+        $fileName = basename($filePath);
+
+        // RF2 patterns from OpenEMR's list_staged.php
+        $rf2Patterns = [
+            "/SnomedCT_InternationalRF2_PRODUCTION_([0-9]{8})[0-9a-zA-Z]{8}.zip/",
+            "/SnomedCT_ManagedServiceIE_PRODUCTION_IE1000220_([0-9]{8})[0-9a-zA-Z]{8}.zip/",
+            "/SnomedCT_USEditionRF2_PRODUCTION_([0-9]{8})[0-9a-zA-Z]{8}.zip/",
+            "/SnomedCT_ManagedServiceUS_PRODUCTION_US[0-9]{7}_([0-9a-zA-Z]{8})T[0-9Z]{7}.zip/",
+            "/SnomedCT_SpanishRelease-es_PRODUCTION_([0-9]{8})[0-9a-zA-Z]{8}.zip/",
+        ];
+
+        foreach ($rf2Patterns as $pattern) {
+            if (preg_match($pattern, $fileName)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

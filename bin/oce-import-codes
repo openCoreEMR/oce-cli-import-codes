@@ -13,7 +13,7 @@
 
 // Ensure we're running from CLI
 if (php_sapi_name() !== 'cli') {
-    raise RuntimeError('This tool can only be run from the command line');
+    throw RuntimeException('This tool can only be run from the command line');
 }
 
 // Autoload: PHAR or Composer

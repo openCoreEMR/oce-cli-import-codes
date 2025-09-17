@@ -56,8 +56,8 @@ try {
     echo "Adding source files...\n";
     $phar->buildFromDirectory(__DIR__, '/^(?!.*\/(?:build|tests|\.git)).*$/');
 
-    // Set stub
-    $stub = $phar->createDefaultStub('bin/oce-import-codes');
+    // Set stub with proper shebang
+    $stub = "#!/usr/bin/env php\n" . $phar->createDefaultStub('bin/oce-import-codes');
     $phar->setStub($stub);
 
     // Stop buffering and write

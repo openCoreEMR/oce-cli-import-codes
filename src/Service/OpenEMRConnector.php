@@ -47,9 +47,25 @@ class OpenEMRConnector
         require_once $globalsPath;
         require_once $standardTablesPath;
 
-        // Verify database connection
-        if (!isset($GLOBALS['dbase']) || empty($GLOBALS['dbase'])) {
-            throw new \Exception("OpenEMR database configuration not found");
+        // Verify database connection (using OpenEMR's own validation method)
+        if (!isset($GLOBALS['dbh']) || !$GLOBALS['dbh']) {
+            throw new \Exception("OpenEMR database connection failed - check database configuration and ensure MySQL is running");
+        }
+
+        // Verify ADODB connection is working
+        if (!isset($GLOBALS['adodb']['db']) || !$GLOBALS['adodb']['db']) {
+            throw new \Exception("OpenEMR ADODB database connection not established");
+        }
+
+        // Test connection with a simple query
+        try {
+            if (function_exists('sqlQuery')) {
+                sqlQuery("SELECT 1");
+            } else {
+                throw new \Exception("OpenEMR database functions not available");
+            }
+        } catch (\Exception $e) {
+            throw new \Exception("OpenEMR database connection test failed: " . $e->getMessage());
         }
 
         $this->initialized = true;
