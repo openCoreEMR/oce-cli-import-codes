@@ -18,7 +18,7 @@ if (php_sapi_name() !== 'cli') {
 
 // Autoload: PHAR or Composer
 if (Phar::running()) {
-    require_once 'phar://oce-import-codes.phar/vendor/autoload.php';
+    require_once Phar::running() . '/vendor/autoload.php';
 } else {
     // Find autoload.php for development
     $autoloadPaths = [
