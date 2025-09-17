@@ -199,8 +199,10 @@ class ImportCodesCommand extends Command
 
                 if ($metadata['supported'] && $metadata['revision_date'] && $metadata['version']) {
                     $fileChecksum = $metadata['checksum'] ?: md5_file($filePath);
-                    if ($this->importer->updateTracking($codeType, $metadata['revision_date'], $metadata['version'], $fileChecksum)) {
-                        $io->success("Tracking table updated: {$codeType} v{$metadata['version']} ({$metadata['revision_date']})");
+                    // Use SNOMED for tracking regardless of RF1/RF2 format to match OpenEMR web UI expectations
+                    $trackingCodeType = ($codeType === 'SNOMED_RF2') ? 'SNOMED' : $codeType;
+                    if ($this->importer->updateTracking($trackingCodeType, $metadata['revision_date'], $metadata['version'], $fileChecksum)) {
+                        $io->success("Tracking table updated: {$trackingCodeType} v{$metadata['version']} ({$metadata['revision_date']})");
                     } else {
                         $io->warning("Failed to update tracking table");
                     }

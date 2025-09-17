@@ -16,7 +16,7 @@ namespace OpenCoreEMR\CLI\ImportCodes\Service;
 class MetadataDetector
 {
     /**
-     * Use OpenEMR's existing detection logic by simulating list_staged.php behavior
+     * Use OpenEMR's existing detection logic by directly processing the filename
      */
     public function detectFromFile(string $filePath, string $codeType): array
     {
@@ -31,31 +31,16 @@ class MetadataDetector
             'checksum' => md5_file($filePath)
         ];
 
-        // Create temporary directory structure to leverage OpenEMR's detection
-        $tempDir = sys_get_temp_dir() . '/oce_detect_' . uniqid();
-        $codeDir = $tempDir . '/contrib/' . strtolower($codeType);
+        // Run detection directly on the filename without temp file operations
+        $revisions = $this->runOpenEMRDetection($codeType, $filePath);
 
-        try {
-            mkdir($codeDir, 0755, true);
-            copy($filePath, $codeDir . '/' . $fileName);
-
-            // Simulate the exact logic from list_staged.php
-            $revisions = $this->runOpenEMRDetection($codeType, $codeDir);
-
-            if (!empty($revisions)) {
-                $latest = end($revisions); // Get most recent
-                $result['supported'] = true;
-                $result['version'] = $latest['version'];
-                $result['revision_date'] = $latest['date'];
-                $result['rf2'] = isset($latest['rf2']) && $latest['rf2'];
-                $result['us_extension'] = strpos($latest['version'], 'US') !== false;
-            }
-
-        } finally {
-            // Cleanup
-            if (is_dir($tempDir)) {
-                $this->recursiveDelete($tempDir);
-            }
+        if (!empty($revisions)) {
+            $latest = end($revisions); // Get most recent
+            $result['supported'] = true;
+            $result['version'] = $latest['version'];
+            $result['revision_date'] = $latest['date'];
+            $result['rf2'] = isset($latest['rf2']) && $latest['rf2'];
+            $result['us_extension'] = strpos($latest['version'], 'US') !== false;
         }
 
         return $result;
@@ -64,84 +49,73 @@ class MetadataDetector
     /**
      * Run OpenEMR's exact detection logic (extracted from list_staged.php)
      */
-    private function runOpenEMRDetection(string $db, string $mainPATH): array
+    private function runOpenEMRDetection(string $db, string $filePath): array
     {
         $revisions = array();
+        $fileName = basename($filePath);
 
-        if (!is_dir($mainPATH)) {
-            return $revisions;
-        }
-
-        $files_array = scandir($mainPATH);
-        array_shift($files_array); // remove "."
-        array_shift($files_array); // remove ".."
-
-        foreach ($files_array as $file) {
-            $file = $mainPATH . "/" . $file;
-            if (!is_file($file) || strpos($file, ".zip") === false) {
-                continue;
+        if ($db == 'RXNORM') {
+            if (preg_match("/RxNorm_full_([0-9]{8}).zip/", $fileName, $matches)) {
+                $version = "Standard";
+                $date_release = substr($matches[1], 4) . "-" . substr($matches[1], 0, 2) . "-" . substr($matches[1], 2, -4);
+                $revisions[] = array('date' => $date_release, 'version' => $version, 'path' => $filePath);
             }
+        } elseif ($db == 'SNOMED') {
+            // All SNOMED patterns from OpenEMR's list_staged.php
+            $patterns = [
+                ["/SnomedCT_INT_([0-9]{8}).zip/", "International:English"],
+                ["/SnomedCT_Release_INT_([0-9]{8}).zip/", "International:English"],
+                ["/SnomedCT_RF1Release_INT_([0-9]{8}).zip/", "International:English"],
+                ["/SnomedCT_Release_US[0-9]*_([0-9]{8}).zip/", "US Extension"],
+                ["/sct1_National_US_([0-9]{8}).zip/", "US Extension"],
+                ["/SnomedCT_RF1Release_US[0-9]*_([0-9]{8}).zip/", "Complete US Extension"],
+                ["/SnomedCT_Release-es_INT_([0-9]{8}).zip/", "International:Spanish"],
+                ["/SnomedCT_InternationalRF2_PRODUCTION_([0-9]{8})[0-9a-zA-Z]{8}.zip/", "International:English", true],
+                ["/SnomedCT_ManagedServiceIE_PRODUCTION_IE1000220_([0-9]{8})[0-9a-zA-Z]{8}.zip/", "International:English", true],
+                ["/SnomedCT_USEditionRF2_PRODUCTION_([0-9]{8})[0-9a-zA-Z]{8}.zip/", "Complete US Extension", true],
+                ["/SnomedCT_ManagedServiceUS_PRODUCTION_US[0-9]{7}_([0-9a-zA-Z]{8})T[0-9Z]{7}.zip/", "Complete US Extension", true],
+                ["/SnomedCT_SpanishRelease-es_PRODUCTION_([0-9]{8})[0-9a-zA-Z]{8}.zip/", "International:Spanish", true],
+            ];
 
-            $supported_file = 0;
+            foreach ($patterns as $pattern) {
+                $regex = $pattern[0];
+                $version = $pattern[1];
+                $rf2 = isset($pattern[2]) ? $pattern[2] : false;
 
-            if ($db == 'RXNORM') {
-                if (preg_match("/RxNorm_full_([0-9]{8}).zip/", $file, $matches)) {
-                    $version = "Standard";
-                    $date_release = substr($matches[1], 4) . "-" . substr($matches[1], 0, 2) . "-" . substr($matches[1], 2, -4);
-                    $revisions[] = array('date' => $date_release, 'version' => $version, 'path' => $file);
-                    $supported_file = 1;
-                }
-            } elseif ($db == 'SNOMED') {
-                // All SNOMED patterns from OpenEMR's list_staged.php
-                $patterns = [
-                    ["/SnomedCT_INT_([0-9]{8}).zip/", "International:English"],
-                    ["/SnomedCT_Release_INT_([0-9]{8}).zip/", "International:English"],
-                    ["/SnomedCT_RF1Release_INT_([0-9]{8}).zip/", "International:English"],
-                    ["/SnomedCT_Release_US[0-9]*_([0-9]{8}).zip/", "US Extension"],
-                    ["/sct1_National_US_([0-9]{8}).zip/", "US Extension"],
-                    ["/SnomedCT_RF1Release_US[0-9]*_([0-9]{8}).zip/", "Complete US Extension"],
-                    ["/SnomedCT_Release-es_INT_([0-9]{8}).zip/", "International:Spanish"],
-                    ["/SnomedCT_InternationalRF2_PRODUCTION_([0-9]{8})[0-9a-zA-Z]{8}.zip/", "International:English", true],
-                    ["/SnomedCT_ManagedServiceIE_PRODUCTION_IE1000220_([0-9]{8})[0-9a-zA-Z]{8}.zip/", "International:English", true],
-                    ["/SnomedCT_USEditionRF2_PRODUCTION_([0-9]{8})[0-9a-zA-Z]{8}.zip/", "Complete US Extension", true],
-                    ["/SnomedCT_ManagedServiceUS_PRODUCTION_US[0-9]{7}_([0-9a-zA-Z]{8})T[0-9Z]{7}.zip/", "Complete US Extension", true],
-                    ["/SnomedCT_SpanishRelease-es_PRODUCTION_([0-9]{8})[0-9a-zA-Z]{8}.zip/", "International:Spanish", true],
-                ];
-
-                foreach ($patterns as $pattern) {
-                    $regex = $pattern[0];
-                    $version = $pattern[1];
-                    $rf2 = isset($pattern[2]) ? $pattern[2] : false;
-
-                    if (preg_match($regex, $file, $matches)) {
-                        $date_release = substr($matches[1], 0, 4) . "-" . substr($matches[1], 4, -2) . "-" . substr($matches[1], 6);
-                        $temp_date = array('date' => $date_release, 'version' => $version, 'path' => $file);
-                        if ($rf2) $temp_date['rf2'] = true;
-                        $revisions[] = $temp_date;
-                        $supported_file = 1;
-                        break;
+                if (preg_match($regex, $fileName, $matches)) {
+                    // Fix date parsing - handle both 8-digit dates and mixed formats
+                    $dateStr = $matches[1];
+                    if (strlen($dateStr) === 8 && is_numeric($dateStr)) {
+                        // Format: YYYYMMDD
+                        $date_release = substr($dateStr, 0, 4) . "-" . substr($dateStr, 4, 2) . "-" . substr($dateStr, 6, 2);
+                    } else {
+                        // Handle other formats or fallback
+                        $date_release = date('Y-m-d'); // Use current date as fallback
                     }
-                }
-            } elseif ($db == 'CQM_VALUESET') {
-                if (preg_match("/e[p,c]_.*_cms_([0-9]{8}).xml.zip/", $file, $matches)) {
-                    $version = "Standard";
-                    $date_release = substr($matches[1], 0, 4) . "-" . substr($matches[1], 4, -2) . "-" . substr($matches[1], 6);
-                    $revisions[] = array('date' => $date_release, 'version' => $version, 'path' => $file);
-                    $supported_file = 1;
-                }
-            } elseif (is_numeric(strpos($db, "ICD"))) {
-                // For ICD, use database lookup if available
-                if (function_exists('sqlQuery')) {
-                    $qry_str = "SELECT `load_checksum`,`load_source`,`load_release_date` FROM `supported_external_dataloads` WHERE `load_type` = ? and `load_filename` = ? and `load_checksum` = ? ORDER BY `load_release_date` DESC";
-                    $file_checksum = md5_file($file);
-                    $sqlReturn = sqlQuery($qry_str, array($db, basename($file), $file_checksum));
 
-                    if (!empty($sqlReturn)) {
-                        $version = $sqlReturn['load_source'];
-                        $date_release = $sqlReturn['load_release_date'];
-                        $revisions[] = array('date' => $date_release, 'version' => $version, 'path' => $file, 'checksum' => $file_checksum);
-                        $supported_file = 1;
-                    }
+                    $temp_date = array('date' => $date_release, 'version' => $version, 'path' => $filePath);
+                    if ($rf2) $temp_date['rf2'] = true;
+                    $revisions[] = $temp_date;
+                    break;
+                }
+            }
+        } elseif ($db == 'CQM_VALUESET') {
+            if (preg_match("/e[p,c]_.*_cms_([0-9]{8}).xml.zip/", $fileName, $matches)) {
+                $version = "Standard";
+                $date_release = substr($matches[1], 0, 4) . "-" . substr($matches[1], 4, 2) . "-" . substr($matches[1], 6, 2);
+                $revisions[] = array('date' => $date_release, 'version' => $version, 'path' => $filePath);
+            }
+        } elseif (is_numeric(strpos($db, "ICD"))) {
+            // For ICD, use database lookup if available
+            if (function_exists('sqlQuery')) {
+                $qry_str = "SELECT `load_checksum`,`load_source`,`load_release_date` FROM `supported_external_dataloads` WHERE `load_type` = ? and `load_filename` = ? and `load_checksum` = ? ORDER BY `load_release_date` DESC";
+                $file_checksum = md5_file($filePath);
+                $sqlReturn = sqlQuery($qry_str, array($db, $fileName, $file_checksum));
+
+                if (!empty($sqlReturn)) {
+                    $version = $sqlReturn['load_source'];
+                    $date_release = $sqlReturn['load_release_date'];
+                    $revisions[] = array('date' => $date_release, 'version' => $version, 'path' => $filePath, 'checksum' => $file_checksum);
                 }
             }
         }
@@ -190,20 +164,4 @@ class MetadataDetector
         ];
     }
 
-    private function recursiveDelete(string $dir): void
-    {
-        if (is_dir($dir)) {
-            $objects = scandir($dir);
-            foreach ($objects as $object) {
-                if ($object != "." && $object != "..") {
-                    if (is_dir($dir . "/" . $object)) {
-                        $this->recursiveDelete($dir . "/" . $object);
-                    } else {
-                        unlink($dir . "/" . $object);
-                    }
-                }
-            }
-            rmdir($dir);
-        }
-    }
 }
