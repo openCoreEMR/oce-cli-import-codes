@@ -22,7 +22,6 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 class ImportCodesCommand extends Command
@@ -71,6 +70,12 @@ class ImportCodesCommand extends Command
         $dryRun = $input->getOption('dry-run');
         $cleanup = $input->getOption('cleanup');
         $tempDir = $input->getOption('temp-dir');
+
+        // Resolve relative paths to absolute paths
+        if (!$this->is_absolute_path($filePath)) {
+            $filePath = getcwd() . DIRECTORY_SEPARATOR . $filePath;
+        }
+        $filePath = realpath($filePath) ?: $filePath;
 
         // Validate file exists
         if (!file_exists($filePath)) {
@@ -169,27 +174,20 @@ class ImportCodesCommand extends Command
         try {
             // Step 1: File handling
             $io->section("Step 1: File Processing");
-            $progressBar = new ProgressBar($output, 3);
-            $progressBar->setFormat(' %current%/%max% [%bar%] %percent:3s%% %message%');
 
-            $progressBar->setMessage('Copying file to temporary directory...');
-            $progressBar->start();
-
+            $io->info('Copying file to temporary directory...');
             if (!$dryRun) {
                 $this->importer->copyFile($filePath, $codeType);
             }
-            $progressBar->advance();
+            $io->info('File copied successfully');
 
-            $progressBar->setMessage('Extracting archive...');
+            $io->info('Extracting archive...');
             if (!$dryRun) {
                 $this->importer->extractFile($filePath, $codeType);
             }
-            $progressBar->advance();
+            $io->info('Archive extracted successfully');
 
-            $progressBar->setMessage('File processing complete');
-            $progressBar->advance();
-            $progressBar->finish();
-            $io->newLine(2);
+            $io->info('File processing complete');
 
             // Step 2: Database Import
             $io->section("Step 2: Database Import");
@@ -240,20 +238,28 @@ class ImportCodesCommand extends Command
 
     private function performImport(SymfonyStyle $io, OutputInterface $output, string $codeType, bool $isWindows, bool $usExtension, bool $dryRun, string $filePath = ''): void
     {
-        $progressBar = new ProgressBar($output, 1);
-        $progressBar->setFormat(' %current%/%max% [%bar%] %percent:3s%% %message%');
-
-        $progressBar->setMessage("Importing $codeType data...");
-        $progressBar->start();
+        $io->info("Starting import of $codeType data...");
 
         if (!$dryRun) {
             $this->importer->import($codeType, $isWindows, $usExtension, $filePath);
         }
 
-        $progressBar->advance();
-        $progressBar->finish();
-        $io->newLine(2);
         $io->info("$codeType data imported successfully");
+    }
+
+    private function is_absolute_path(string $path): bool
+    {
+        // Unix/Linux absolute path starts with /
+        if (str_starts_with($path, '/')) {
+            return true;
+        }
+
+        // Windows absolute path starts with drive letter (e.g., C:\)
+        if (preg_match('/^[a-zA-Z]:[\/\\\\]/', $path)) {
+            return true;
+        }
+
+        return false;
     }
 
 }
