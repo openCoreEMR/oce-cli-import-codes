@@ -9,6 +9,8 @@ A standalone CLI tool for importing standardized medical code tables (RXNORM, SN
 
 - ✅ **Standalone CLI tool** - No need to modify OpenEMR core files
 - ✅ **Composer installable** - Easy installation and updates
+- ✅ **Auto-detection** - Automatically detects code type from filename
+- ✅ **Non-interactive** - Runs without user prompts for automation
 - ✅ **Progress feedback** - Real-time progress bars and status updates
 - ✅ **Docker/Kubernetes optimized** - Perfect for containerized deployments
 - ✅ **Multi-site support** - Import codes across multiple OpenEMR sites
@@ -62,24 +64,22 @@ php -d phar.readonly=0 build.php
 ## Quick Start
 
 ```bash
-# Using PHAR (recommended)
-./oce-import-codes.phar RXNORM /path/to/rxnorm.zip --openemr-path=/var/www/openemr
+# Using PHAR (recommended) - auto-detects RXNORM from filename
+./oce-import-codes.phar /path/to/RxNorm_full_01012024.zip --openemr-path=/var/www/openemr
 
 # Or if installed to PATH
-oce-import-codes RXNORM /path/to/rxnorm.zip --openemr-path=/var/www/openemr
+oce-import-codes /path/to/SnomedCT_USEditionRF2_PRODUCTION_20240301T120000Z.zip --openemr-path=/var/www/openemr
 
-# SNOMED with US extension
-oce-import-codes SNOMED /path/to/snomed.zip --openemr-path=/var/www/openemr --us-extension
+# Override auto-detection if needed
+oce-import-codes /path/to/custom-name.zip --code-type=SNOMED --openemr-path=/var/www/openemr
 
-# ICD10 with tracking and cleanup
-oce-import-codes ICD10 /path/to/icd10.zip \
+# ICD10 with cleanup - auto-detects from filename
+oce-import-codes /path/to/icd10cm_order_2024.txt.zip \
   --openemr-path=/var/www/openemr \
-  --revision=2024-01-01 \
-  --code-version=2024 \
   --cleanup
 
 # Dry run to test
-oce-import-codes RXNORM /path/to/rxnorm.zip --openemr-path=/var/www/openemr --dry-run
+oce-import-codes /path/to/RxNorm_full_01012024.zip --openemr-path=/var/www/openemr --dry-run
 ```
 
 ## Usage
@@ -87,26 +87,28 @@ oce-import-codes RXNORM /path/to/rxnorm.zip --openemr-path=/var/www/openemr --dr
 ### Command Syntax
 
 ```bash
-oce-import-codes [OPTIONS] <code-type> <file-path>
+oce-import-codes [OPTIONS] <file-path>
 ```
+
+**Auto-Detection**: The tool automatically detects the code type from the filename. If detection fails, you can manually specify the code type using `--code-type`.
 
 ### Arguments
 
 | Argument | Description | Required |
 |----------|-------------|----------|
-| `code-type` | Type of codes to import (RXNORM\|SNOMED\|SNOMED_RF2\|ICD9\|ICD10\|CQM_VALUESET) | Yes |
 | `file-path` | Path to the code archive file | Yes |
 
 ### Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--code-type` | Override auto-detected code type (RXNORM\|SNOMED\|SNOMED_RF2\|ICD9\|ICD10\|CQM_VALUESET) | Auto-detect |
 | `--openemr-path` | Path to OpenEMR installation | `/var/www/localhost/htdocs/openemr` |
 | `--site` | OpenEMR site name | `default` |
 | `--windows` | Use Windows processing (RXNORM only) | `false` |
 | `--us-extension` | Import as US extension (SNOMED only) | `false` |
-| `--revision` | Revision date (YYYY-MM-DD format) | - |
-| `--code-version` | Version string for tracking | - |
+| `--revision` | Revision date (YYYY-MM-DD format) | Auto-detect |
+| `--code-version` | Version string for tracking | Auto-detect |
 | `--dry-run` | Test without database changes | `false` |
 | `--cleanup` | Remove temp files after import | `false` |
 | `--temp-dir` | Custom temporary directory | - |

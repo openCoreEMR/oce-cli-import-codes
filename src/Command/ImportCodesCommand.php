@@ -165,11 +165,6 @@ class ImportCodesCommand extends Command
             $this->importer->setTempDir($tempDir);
         }
 
-        // Confirm before proceeding
-        if (!$io->confirm('Continue with import?', false)) {
-            $io->info('Import cancelled');
-            return Command::SUCCESS;
-        }
 
         try {
             // Step 1: File handling
