@@ -32,6 +32,7 @@ class ImportCodesCommand extends Command
     private CodeImporter $importer;
     private OpenEMRConnector $connector;
     private MetadataDetector $detector;
+    private OutputInterface $output;
 
     public function __construct(?CodeImporter $importer = null, ?OpenEMRConnector $connector = null, ?MetadataDetector $detector = null)
     {
@@ -65,7 +66,7 @@ class ImportCodesCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $io = new SymfonyStyle($input, $output);
+        $this->output = $output;
 
         $filePath = $input->getArgument('file-path');
         $openemrPath = $input->getOption('openemr-path');
@@ -86,12 +87,12 @@ class ImportCodesCommand extends Command
 
         // Validate file exists
         if (!file_exists($filePath)) {
-            $io->error("File not found: $filePath");
+            $this->logJson('error', 'File not found', ['file_path' => $filePath]);
             return Command::FAILURE;
         }
 
         if (!is_dir($openemrPath)) {
-            $io->error("OpenEMR path not found: $openemrPath");
+            $this->logJson('error', 'OpenEMR path not found', ['openemr_path' => $openemrPath]);
             return Command::FAILURE;
         }
 
@@ -100,23 +101,22 @@ class ImportCodesCommand extends Command
         if ($codeTypeOverride) {
             $codeType = strtoupper($codeTypeOverride);
             if (!in_array($codeType, self::SUPPORTED_TYPES)) {
-                $io->error("Unsupported code type: $codeType. Supported types: " . implode(', ', self::SUPPORTED_TYPES));
+                $this->logJson('error', 'Unsupported code type', ['code_type' => $codeType, 'supported_types' => self::SUPPORTED_TYPES]);
                 return Command::FAILURE;
             }
         } else {
             $codeType = $this->detector->detectCodeType($filePath);
             if (empty($codeType)) {
-                $io->error("Could not auto-detect code type from filename: " . basename($filePath));
-                $io->note("Supported filename patterns:");
-                foreach ($this->detector->getSupportedPatterns() as $type => $patterns) {
-                    $io->writeln("  <comment>$type:</comment> " . implode(', ', array_slice($patterns, 0, 2)) . (count($patterns) > 2 ? '...' : ''));
-                }
+                $this->logJson('error', 'Could not auto-detect code type from filename', [
+                    'filename' => basename($filePath),
+                    'supported_patterns' => $this->detector->getSupportedPatterns()
+                ]);
                 return Command::FAILURE;
             }
         }
 
         if (!$this->detector->isSupported($filePath)) {
-            $io->error("Unsupported file format: " . basename($filePath));
+            $this->logJson('error', 'Unsupported file format', ['filename' => basename($filePath)]);
             return Command::FAILURE;
         }
 
@@ -124,7 +124,7 @@ class ImportCodesCommand extends Command
         try {
             $this->connector->initialize($openemrPath, $site);
         } catch (\Exception $e) {
-            $io->error("Failed to initialize OpenEMR connection: " . $e->getMessage());
+            $this->logJson('error', 'Failed to initialize OpenEMR connection', ['error' => $e->getMessage()]);
             return Command::FAILURE;
         }
 
@@ -132,40 +132,38 @@ class ImportCodesCommand extends Command
         $metadata = $this->detector->detectFromFile($filePath, $codeType);
         $usExtension = $metadata['us_extension'];
 
-        // Display configuration with detected metadata
-        $io->title("OpenEMR Standardized Codes Import CLI");
-        $io->section("Auto-Detected Configuration");
-        $io->definitionList(
-            ['Code Type' => $metadata['code_type'] ?: $codeType],
-            ['Version' => $metadata['version'] ?: 'Unknown'],
-            ['Revision Date' => $metadata['revision_date'] ?: 'Unknown'],
-            ['File Path' => $filePath],
-            ['OpenEMR Path' => $openemrPath],
-            ['Site' => $site],
-            ['Dry Run' => $dryRun ? 'Yes' : 'No'],
-            ['Cleanup' => $cleanup ? 'Yes' : 'No'],
-            ['Force Import' => $force ? 'Yes' : 'No']
-        );
+        // Log configuration with detected metadata
+        $this->logJson('info', 'Starting OpenEMR Standardized Codes Import', [
+            'code_type' => $metadata['code_type'] ?: $codeType,
+            'version' => $metadata['version'] ?: 'Unknown',
+            'revision_date' => $metadata['revision_date'] ?: 'Unknown',
+            'file_path' => $filePath,
+            'openemr_path' => $openemrPath,
+            'site' => $site,
+            'dry_run' => $dryRun,
+            'cleanup' => $cleanup,
+            'force_import' => $force
+        ]);
 
         if ($metadata['rf2']) {
-            $io->note('Detected RF2 format - using SNOMED RF2 import');
+            $this->logJson('info', 'Detected RF2 format', ['import_type' => 'SNOMED_RF2']);
             $codeType = 'SNOMED_RF2';
         }
 
         if ($codeType === 'RXNORM' && $isWindows) {
-            $io->note('Using Windows-specific RXNORM processing');
+            $this->logJson('info', 'Using Windows-specific RXNORM processing');
         }
 
         if ($usExtension) {
-            $io->note('Detected US Extension');
+            $this->logJson('info', 'Detected US Extension');
         }
 
         if ($dryRun) {
-            $io->warning('DRY RUN MODE - No database changes will be made');
+            $this->logJson('warning', 'DRY RUN MODE - No database changes will be made');
         }
 
         if (!$metadata['supported']) {
-            $io->warning('File metadata could not be fully detected - tracking may be incomplete');
+            $this->logJson('warning', 'File metadata could not be fully detected - tracking may be incomplete');
         }
 
         // Set custom temp directory if provided
@@ -182,69 +180,77 @@ class ImportCodesCommand extends Command
             $fileChecksum = $metadata['checksum'] ?: md5_file($filePath);
 
             if ($this->importer->isAlreadyLoaded($trackingCodeType, $metadata['revision_date'], $metadata['version'], $fileChecksum)) {
-                $io->warning("Code package appears to be already loaded (same type, version, revision date, and file checksum)");
-                $io->note("Use --force flag to import anyway, or --dry-run to test without checking");
+                $this->logJson('warning', 'Code package appears to be already loaded', [
+                    'type' => $trackingCodeType,
+                    'version' => $metadata['version'],
+                    'revision_date' => $metadata['revision_date'],
+                    'suggestion' => 'Use --force flag to import anyway, or --dry-run to test without checking'
+                ]);
                 return Command::SUCCESS;
             }
         }
 
         try {
             // Step 1: File handling
-            $io->section("Step 1: File Processing");
+            $this->logJson('info', 'Starting file processing');
 
-            $io->info('Copying file to temporary directory...');
+            $this->logJson('info', 'Copying file to temporary directory');
             if (!$dryRun) {
                 $this->importer->copyFile($filePath, $codeType);
             }
-            $io->info('File copied successfully');
+            $this->logJson('info', 'File copied successfully');
 
-            $io->info('Extracting archive...');
+            $this->logJson('info', 'Extracting archive');
             if (!$dryRun) {
                 $this->importer->extractFile($filePath, $codeType);
             }
-            $io->info('Archive extracted successfully');
+            $this->logJson('info', 'Archive extracted successfully');
 
-            $io->info('File processing complete');
+            $this->logJson('info', 'File processing complete');
 
             // Step 2: Database Import
-            $io->section("Step 2: Database Import");
-            $this->performImport($io, $output, $codeType, $isWindows, $usExtension, $dryRun, $filePath);
+            $this->logJson('info', 'Starting database import');
+            $this->performImport($codeType, $isWindows, $usExtension, $dryRun, $filePath);
 
             // Step 3: Update tracking
             if (!$dryRun) {
-                $io->section("Step 3: Update Tracking");
+                $this->logJson('info', 'Starting tracking update');
 
                 if ($metadata['supported'] && $metadata['revision_date'] && $metadata['version']) {
                     $fileChecksum = $metadata['checksum'] ?: md5_file($filePath);
                     // Use SNOMED for tracking regardless of RF1/RF2 format to match OpenEMR web UI expectations
                     $trackingCodeType = ($codeType === 'SNOMED_RF2') ? 'SNOMED' : $codeType;
                     if ($this->importer->updateTracking($trackingCodeType, $metadata['revision_date'], $metadata['version'], $fileChecksum)) {
-                        $io->success("Tracking table updated: {$trackingCodeType} v{$metadata['version']} ({$metadata['revision_date']})");
+                        $this->logJson('success', 'Tracking table updated', [
+                            'type' => $trackingCodeType,
+                            'version' => $metadata['version'],
+                            'revision_date' => $metadata['revision_date']
+                        ]);
                     } else {
-                        $io->warning("Failed to update tracking table");
+                        $this->logJson('warning', 'Failed to update tracking table');
                     }
                 } else {
-                    $io->warning("Metadata incomplete - tracking table not updated");
-                    $io->note("Missing: " . implode(', ', array_filter([
+                    $missing = array_filter([
                         !$metadata['revision_date'] ? 'revision_date' : null,
                         !$metadata['version'] ? 'version' : null,
                         !$metadata['supported'] ? 'supported format' : null
-                    ])));
+                    ]);
+                    $this->logJson('warning', 'Metadata incomplete - tracking table not updated', ['missing' => $missing]);
                 }
             }
 
             // Step 4: Cleanup
             if ($cleanup && !$dryRun) {
-                $io->section("Step 4: Cleanup");
+                $this->logJson('info', 'Starting cleanup');
                 $this->importer->cleanup($codeType);
-                $io->info("Temporary files cleaned up");
+                $this->logJson('info', 'Temporary files cleaned up');
             }
 
-            $io->success("Import completed successfully!");
+            $this->logJson('success', 'Import completed successfully');
             return Command::SUCCESS;
 
         } catch (\Exception $e) {
-            $io->error("Import failed: " . $e->getMessage());
+            $this->logJson('error', 'Import failed', ['error' => $e->getMessage()]);
 
             // Cleanup on error
             if (!$dryRun) {
@@ -255,9 +261,9 @@ class ImportCodesCommand extends Command
         }
     }
 
-    private function performImport(SymfonyStyle $io, OutputInterface $output, string $codeType, bool $isWindows, bool $usExtension, bool $dryRun, string $filePath = ''): void
+    private function performImport(string $codeType, bool $isWindows, bool $usExtension, bool $dryRun, string $filePath = ''): void
     {
-        $io->info("Starting import of $codeType data...");
+        $this->logJson('info', 'Starting import', ['code_type' => $codeType]);
 
         if (!$dryRun) {
             try {
@@ -272,7 +278,7 @@ class ImportCodesCommand extends Command
             }
         }
 
-        $io->info("$codeType data imported successfully");
+        $this->logJson('info', 'Import completed', ['code_type' => $codeType]);
     }
 
     private function is_absolute_path(string $path): bool
@@ -294,4 +300,20 @@ class ImportCodesCommand extends Command
      * Check if a code package is already loaded with the same metadata
      */
 
+    private function logJson(string $level, string $message, array $data = []): void
+    {
+        $logEntry = [
+            'timestamp' => gmdate('Y-m-d\TH:i:s.v\Z'),
+            'level' => strtoupper($level),
+            'message' => $message,
+            'component' => 'oce-import-codes'
+        ];
+
+        if (!empty($data)) {
+            $logEntry = array_merge($logEntry, $data);
+        }
+
+        $json = json_encode($logEntry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $this->output->writeln($json);
+    }
 }

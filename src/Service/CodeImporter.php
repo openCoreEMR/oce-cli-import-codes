@@ -105,7 +105,7 @@ class CodeImporter
         try {
             // If we waited for the lock, check if vocabulary was already imported
             if ($this->waitedForLock && $this->isVocabularyLoaded($codeType)) {
-                echo "Vocabulary {$codeType} was already imported by another process. Skipping import.\n";
+                $this->logJson('info', 'Vocabulary already imported by another process', ['code_type' => $codeType, 'action' => 'skipping']);
                 return;
             }
 
@@ -341,7 +341,11 @@ class CodeImporter
             }
 
             if ($attempt < $this->lockRetryAttempts) {
-                echo "Lock is held by another process. Waiting {$delay} seconds before retry {$attempt}/{$this->lockRetryAttempts}...\n";
+                $this->logJson('info', 'Lock is held by another process', [
+                    'delay_seconds' => $delay,
+                    'attempt' => $attempt,
+                    'max_attempts' => $this->lockRetryAttempts
+                ]);
                 $this->waitedForLock = true;
                 sleep($delay);
 
@@ -409,5 +413,25 @@ class CodeImporter
     public function __destruct()
     {
         $this->releaseLock();
+    }
+
+    /**
+     * Log JSON structured message to stdout
+     */
+    private function logJson(string $level, string $message, array $data = []): void
+    {
+        $logEntry = [
+            'timestamp' => gmdate('Y-m-d\TH:i:s.v\Z'),
+            'level' => strtoupper($level),
+            'message' => $message,
+            'component' => 'code-importer'
+        ];
+
+        if (!empty($data)) {
+            $logEntry = array_merge($logEntry, $data);
+        }
+
+        $json = json_encode($logEntry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        echo $json . "\n";
     }
 }
