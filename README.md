@@ -80,6 +80,9 @@ oce-import-codes /path/to/icd10cm_order_2024.txt.zip \
 
 # Dry run to test
 oce-import-codes /path/to/RxNorm_full_01012024.zip --openemr-path=/var/www/openemr --dry-run
+
+# Force import even if already loaded
+oce-import-codes /path/to/RxNorm_full_01012024.zip --openemr-path=/var/www/openemr --force
 ```
 
 ## Usage
@@ -91,6 +94,8 @@ oce-import-codes [OPTIONS] <file-path>
 ```
 
 **Auto-Detection**: The tool automatically detects the code type from the filename. If detection fails, you can manually specify the code type using `--code-type`.
+
+**Skip Behavior**: By default, the tool checks if a code package with the same type, version, revision date, and file checksum has already been imported. If found, it will skip the import to avoid duplicates. Use `--force` to override this behavior and import anyway.
 
 ### Arguments
 
@@ -112,6 +117,7 @@ oce-import-codes [OPTIONS] <file-path>
 | `--dry-run` | Test without database changes | `false` |
 | `--cleanup` | Remove temp files after import | `false` |
 | `--temp-dir` | Custom temporary directory | - |
+| `--force` | Force import even if same version appears loaded | `false` |
 
 ## Docker/Kubernetes Deployment
 

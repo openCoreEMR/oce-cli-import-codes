@@ -54,6 +54,7 @@ class ImportCodesCommand extends Command
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Perform a dry run without making database changes')
             ->addOption('cleanup', null, InputOption::VALUE_NONE, 'Clean up temporary files after import')
             ->addOption('temp-dir', null, InputOption::VALUE_REQUIRED, 'Custom temporary directory path')
+            ->addOption('force', null, InputOption::VALUE_NONE, 'Force import even if the same version appears to be already loaded')
             ->addUsage('/path/to/RxNorm_full_01012024.zip --openemr-path=/var/www/openemr')
             ->addUsage('/path/to/SnomedCT_USEditionRF2_PRODUCTION_20240301T120000Z.zip')
             ->addUsage('/path/to/icd10cm_order_2024.txt.zip --cleanup');
@@ -70,6 +71,7 @@ class ImportCodesCommand extends Command
         $dryRun = $input->getOption('dry-run');
         $cleanup = $input->getOption('cleanup');
         $tempDir = $input->getOption('temp-dir');
+        $force = $input->getOption('force');
 
         // Resolve relative paths to absolute paths
         if (!$this->is_absolute_path($filePath)) {
@@ -136,7 +138,8 @@ class ImportCodesCommand extends Command
             ['OpenEMR Path' => $openemrPath],
             ['Site' => $site],
             ['Dry Run' => $dryRun ? 'Yes' : 'No'],
-            ['Cleanup' => $cleanup ? 'Yes' : 'No']
+            ['Cleanup' => $cleanup ? 'Yes' : 'No'],
+            ['Force Import' => $force ? 'Yes' : 'No']
         );
 
         if ($metadata['rf2']) {
@@ -165,6 +168,17 @@ class ImportCodesCommand extends Command
             $this->importer->setTempDir($tempDir);
         }
 
+        // Check if already loaded (unless force flag is set)
+        if (!$force && !$dryRun && $metadata['supported'] && $metadata['revision_date'] && $metadata['version']) {
+            $trackingCodeType = ($codeType === 'SNOMED_RF2') ? 'SNOMED' : $codeType;
+            $fileChecksum = $metadata['checksum'] ?: md5_file($filePath);
+
+            if ($this->isAlreadyLoaded($trackingCodeType, $metadata['revision_date'], $metadata['version'], $fileChecksum)) {
+                $io->warning("Code package appears to be already loaded (same type, version, revision date, and file checksum)");
+                $io->note("Use --force flag to import anyway, or --dry-run to test without checking");
+                return Command::SUCCESS;
+            }
+        }
 
         try {
             // Step 1: File handling
@@ -257,6 +271,23 @@ class ImportCodesCommand extends Command
         }
 
         return false;
+    }
+
+    /**
+     * Check if a code package is already loaded with the same metadata
+     */
+    private function isAlreadyLoaded(string $codeType, string $revisionDate, string $version, string $fileChecksum): bool
+    {
+        if (!function_exists('sqlQuery')) {
+            return false;
+        }
+
+        $result = sqlQuery(
+            "SELECT COUNT(*) as count FROM `standardized_tables_track` WHERE `name` = ? AND `revision_date` = ? AND `revision_version` = ? AND `file_checksum` = ?",
+            array($codeType, $revisionDate, $version, $fileChecksum)
+        );
+
+        return $result && $result['count'] > 0;
     }
 
 }
