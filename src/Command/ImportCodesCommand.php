@@ -16,6 +16,7 @@ namespace OpenCoreEMR\CLI\ImportCodes\Command;
 use OpenCoreEMR\CLI\ImportCodes\Service\CodeImporter;
 use OpenCoreEMR\CLI\ImportCodes\Service\OpenEMRConnector;
 use OpenCoreEMR\CLI\ImportCodes\Service\MetadataDetector;
+use OpenCoreEMR\CLI\ImportCodes\Exception\CodeImportException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputDefinition;
 use Symfony\Component\Console\Input\InputInterface;
@@ -55,6 +56,8 @@ class ImportCodesCommand extends Command
             ->addOption('cleanup', null, InputOption::VALUE_NONE, 'Clean up temporary files after import')
             ->addOption('temp-dir', null, InputOption::VALUE_REQUIRED, 'Custom temporary directory path')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Force import even if the same version appears to be already loaded')
+            ->addOption('lock-retry-attempts', null, InputOption::VALUE_REQUIRED, 'Number of times to retry lock acquisition (default: 10)', 10)
+            ->addOption('lock-retry-delay', null, InputOption::VALUE_REQUIRED, 'Initial delay between lock retries in seconds (default: 30, set to 0 for no retries)', 30)
             ->addUsage('/path/to/RxNorm_full_01012024.zip --openemr-path=/var/www/openemr')
             ->addUsage('/path/to/SnomedCT_USEditionRF2_PRODUCTION_20240301T120000Z.zip')
             ->addUsage('/path/to/icd10cm_order_2024.txt.zip --cleanup');
@@ -72,6 +75,8 @@ class ImportCodesCommand extends Command
         $cleanup = $input->getOption('cleanup');
         $tempDir = $input->getOption('temp-dir');
         $force = $input->getOption('force');
+        $lockRetryAttempts = (int) $input->getOption('lock-retry-attempts');
+        $lockRetryDelay = (int) $input->getOption('lock-retry-delay');
 
         // Resolve relative paths to absolute paths
         if (!$this->is_absolute_path($filePath)) {
@@ -168,6 +173,9 @@ class ImportCodesCommand extends Command
             $this->importer->setTempDir($tempDir);
         }
 
+        // Configure lock retry behavior
+        $this->importer->setLockRetryConfig($lockRetryAttempts, $lockRetryDelay);
+
         // Check if already loaded (unless force flag is set)
         if (!$force && !$dryRun && $metadata['supported'] && $metadata['revision_date'] && $metadata['version']) {
             $trackingCodeType = ($codeType === 'SNOMED_RF2') ? 'SNOMED' : $codeType;
@@ -252,7 +260,16 @@ class ImportCodesCommand extends Command
         $io->info("Starting import of $codeType data...");
 
         if (!$dryRun) {
-            $this->importer->import($codeType, $isWindows, $usExtension, $filePath);
+            try {
+                $this->importer->import($codeType, $isWindows, $usExtension, $filePath);
+            } catch (\Exception $e) {
+                // Check if this is a lock acquisition failure
+                if (strpos($e->getMessage(), 'Failed to acquire database lock') !== false) {
+                    throw new CodeImportException("Import failed: " . $e->getMessage());
+                }
+                // Re-throw other exceptions as-is
+                throw $e;
+            }
         }
 
         $io->info("$codeType data imported successfully");

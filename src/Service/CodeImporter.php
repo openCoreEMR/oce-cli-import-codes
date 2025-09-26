@@ -13,9 +13,16 @@
 
 namespace OpenCoreEMR\CLI\ImportCodes\Service;
 
+use OpenCoreEMR\CLI\ImportCodes\Exception\CodeImportException;
+use OpenCoreEMR\CLI\ImportCodes\Exception\FileSystemException;
+use OpenCoreEMR\CLI\ImportCodes\Exception\DatabaseLockException;
+
 class CodeImporter
 {
     private ?string $customTempDir = null;
+    private ?string $currentLockName = null;
+    private int $lockRetryAttempts = 10;
+    private int $lockRetryDelaySeconds = 30;
 
     /**
      * Set custom temporary directory
@@ -23,9 +30,18 @@ class CodeImporter
     public function setTempDir(string $tempDir): void
     {
         if (!is_dir($tempDir) || !is_writable($tempDir)) {
-            throw new \Exception("Temporary directory is not writable: $tempDir");
+            throw new FileSystemException("Temporary directory is not writable: $tempDir");
         }
         $this->customTempDir = $tempDir;
+    }
+
+    /**
+     * Configure lock retry behavior
+     */
+    public function setLockRetryConfig(int $attempts = 10, int $delaySeconds = 30): void
+    {
+        $this->lockRetryAttempts = max(1, $attempts);
+        $this->lockRetryDelaySeconds = max(0, $delaySeconds);
     }
 
     /**
@@ -50,11 +66,11 @@ class CodeImporter
     public function copyFile(string $filePath, string $codeType): void
     {
         if (!function_exists('temp_copy')) {
-            throw new \Exception("OpenEMR temp_copy function not available");
+            throw new CodeImportException("OpenEMR temp_copy function not available");
         }
 
         if (!temp_copy($filePath, $codeType)) {
-            throw new \Exception("Failed to copy file to temporary directory");
+            throw new FileSystemException("Failed to copy file to temporary directory");
         }
     }
 
@@ -64,11 +80,11 @@ class CodeImporter
     public function extractFile(string $filePath, string $codeType): void
     {
         if (!function_exists('temp_unarchive')) {
-            throw new \Exception("OpenEMR temp_unarchive function not available");
+            throw new CodeImportException("OpenEMR temp_unarchive function not available");
         }
 
         if (!temp_unarchive($filePath, $codeType)) {
-            throw new \Exception("Failed to extract archive file");
+            throw new FileSystemException("Failed to extract archive file");
         }
     }
 
@@ -82,30 +98,38 @@ class CodeImporter
             $codeType = 'SNOMED_RF2';
         }
 
-        switch ($codeType) {
-            case 'RXNORM':
-                $this->importRxnorm($isWindows);
-                break;
+        // Acquire database lock for this code type
+        $this->acquireLock($codeType);
 
-            case 'SNOMED':
-                $this->importSnomed($usExtension);
-                break;
+        try {
+            switch ($codeType) {
+                case 'RXNORM':
+                    $this->importRxnorm($isWindows);
+                    break;
 
-            case 'SNOMED_RF2':
-                $this->importSnomedRF2();
-                break;
+                case 'SNOMED':
+                    $this->importSnomed($usExtension);
+                    break;
 
-            case 'ICD9':
-            case 'ICD10':
-                $this->importIcd($codeType);
-                break;
+                case 'SNOMED_RF2':
+                    $this->importSnomedRF2();
+                    break;
 
-            case 'CQM_VALUESET':
-                $this->importValueset($codeType);
-                break;
+                case 'ICD9':
+                case 'ICD10':
+                    $this->importIcd($codeType);
+                    break;
 
-            default:
-                throw new \Exception("Unsupported code type: $codeType");
+                case 'CQM_VALUESET':
+                    $this->importValueset($codeType);
+                    break;
+
+                default:
+                    throw new CodeImportException("Unsupported code type: $codeType");
+            }
+        } finally {
+            // Always release the lock, even if import fails
+            $this->releaseLock();
         }
     }
 
@@ -140,11 +164,11 @@ class CodeImporter
     private function importRxnorm(bool $isWindows): void
     {
         if (!function_exists('rxnorm_import')) {
-            throw new \Exception("OpenEMR rxnorm_import function not available");
+            throw new CodeImportException("OpenEMR rxnorm_import function not available");
         }
 
         if (!rxnorm_import($isWindows)) {
-            throw new \Exception("RXNORM import failed");
+            throw new CodeImportException("RXNORM import failed");
         }
     }
 
@@ -154,11 +178,11 @@ class CodeImporter
     private function importSnomed(bool $usExtension): void
     {
         if (!function_exists('snomed_import')) {
-            throw new \Exception("OpenEMR snomed_import function not available");
+            throw new CodeImportException("OpenEMR snomed_import function not available");
         }
 
         if (!snomed_import($usExtension)) {
-            throw new \Exception("SNOMED import failed");
+            throw new CodeImportException("SNOMED import failed");
         }
     }
 
@@ -168,11 +192,11 @@ class CodeImporter
     private function importSnomedRF2(): void
     {
         if (!function_exists('snomedRF2_import')) {
-            throw new \Exception("OpenEMR snomedRF2_import function not available");
+            throw new CodeImportException("OpenEMR snomedRF2_import function not available");
         }
 
         if (!snomedRF2_import()) {
-            throw new \Exception("SNOMED RF2 import failed");
+            throw new CodeImportException("SNOMED RF2 import failed");
         }
     }
 
@@ -182,11 +206,11 @@ class CodeImporter
     private function importIcd(string $type): void
     {
         if (!function_exists('icd_import')) {
-            throw new \Exception("OpenEMR icd_import function not available");
+            throw new CodeImportException("OpenEMR icd_import function not available");
         }
 
         if (!icd_import($type)) {
-            throw new \Exception("$type import failed");
+            throw new CodeImportException("$type import failed");
         }
     }
 
@@ -196,11 +220,11 @@ class CodeImporter
     private function importValueset(string $type): void
     {
         if (!function_exists('valueset_import')) {
-            throw new \Exception("OpenEMR valueset_import function not available");
+            throw new CodeImportException("OpenEMR valueset_import function not available");
         }
 
         if (!valueset_import($type)) {
-            throw new \Exception("CQM ValueSet import failed");
+            throw new CodeImportException("CQM ValueSet import failed");
         }
     }
 
@@ -210,7 +234,7 @@ class CodeImporter
     public function updateTracking(string $type, string $revision, string $version, string $fileChecksum): bool
     {
         if (!function_exists('update_tracker_table')) {
-            throw new \Exception("OpenEMR update_tracker_table function not available");
+            throw new CodeImportException("OpenEMR update_tracker_table function not available");
         }
 
         return update_tracker_table($type, $revision, $version, $fileChecksum);
@@ -222,9 +246,117 @@ class CodeImporter
     public function cleanup(string $type): void
     {
         if (!function_exists('temp_dir_cleanup')) {
-            throw new \Exception("OpenEMR temp_dir_cleanup function not available");
+            throw new CodeImportException("OpenEMR temp_dir_cleanup function not available");
         }
 
         temp_dir_cleanup($type);
+    }
+
+    /**
+     * Acquire a database lock for the given code type to prevent concurrent imports
+     */
+    private function acquireLock(string $codeType): void
+    {
+        if (!function_exists('sqlQuery')) {
+            throw new CodeImportException("OpenEMR database functions not available");
+        }
+
+        // Create a unique lock name for this code type
+        $lockName = "openemr_vocab_import_{$codeType}";
+        $this->currentLockName = $lockName;
+
+        $attempt = 1;
+        $delay = $this->lockRetryDelaySeconds;
+
+        while ($attempt <= $this->lockRetryAttempts) {
+            // Attempt to acquire the lock with a 10-second timeout per attempt
+            $result = sqlQuery("SELECT GET_LOCK(?, 10) as lock_result", [$lockName]);
+
+            if ($result && $result['lock_result'] == 1) {
+                // Lock acquired successfully
+                return;
+            }
+
+            // Lock acquisition failed
+            if (!$result || $result['lock_result'] === null) {
+                // Database error - don't retry
+                $this->currentLockName = null;
+                throw new DatabaseLockException("Database lock acquisition failed for {$codeType} import due to a database error.");
+            }
+
+            // Lock is held by another process ($result['lock_result'] == 0)
+            if ($this->lockRetryDelaySeconds == 0) {
+                // No retry mode - fail immediately
+                $this->currentLockName = null;
+                throw new DatabaseLockException("Failed to acquire database lock for {$codeType} import - another import is in progress and no-wait mode is enabled.");
+            }
+
+            if ($attempt < $this->lockRetryAttempts) {
+                echo "Lock is held by another process. Waiting {$delay} seconds before retry {$attempt}/{$this->lockRetryAttempts}...\n";
+                sleep($delay);
+
+                // Exponential backoff with jitter (cap at 5 minutes)
+                $delay = min($delay * 2, 300) + rand(1, min(10, $delay));
+                $attempt++;
+            } else {
+                // Final attempt failed
+                $this->currentLockName = null;
+                $totalWaitTime = $this->calculateTotalWaitTime();
+                throw new DatabaseLockException("Failed to acquire database lock for {$codeType} import after {$this->lockRetryAttempts} attempts ({$totalWaitTime} seconds total). Another import may still be in progress.");
+            }
+        }
+    }
+
+    /**
+     * Calculate approximate total wait time for user feedback
+     */
+    private function calculateTotalWaitTime(): int
+    {
+        if ($this->lockRetryDelaySeconds == 0) {
+            return 0;
+        }
+
+        $total = 0;
+        $delay = $this->lockRetryDelaySeconds;
+
+        for ($i = 1; $i < $this->lockRetryAttempts; $i++) {
+            $total += $delay;
+            $delay = min($delay * 2, 300); // Cap at 5 minutes
+        }
+
+        return $total;
+    }
+
+    /**
+     * Release the currently held database lock
+     */
+    private function releaseLock(): void
+    {
+        if ($this->currentLockName === null) {
+            return; // No lock to release
+        }
+
+        if (!function_exists('sqlQuery')) {
+            // Log warning but don't throw exception during cleanup
+            error_log("Warning: Could not release database lock - OpenEMR functions not available");
+            return;
+        }
+
+        try {
+            sqlQuery("SELECT RELEASE_LOCK(?)", [$this->currentLockName]);
+        } catch (\Exception $e) {
+            // Log error but don't throw exception during cleanup
+            error_log("Warning: Failed to release database lock '{$this->currentLockName}': " . $e->getMessage());
+        } finally {
+            $this->currentLockName = null;
+        }
+    }
+
+    /**
+     * Destructor to ensure locks are always released
+     */
+    public function __destruct()
+    {
+        $this->releaseLock();
     }
 }

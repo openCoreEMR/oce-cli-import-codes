@@ -13,6 +13,8 @@
 
 namespace OpenCoreEMR\CLI\ImportCodes\Service;
 
+use OpenCoreEMR\CLI\ImportCodes\Exception\OpenEMRConnectorException;
+
 class OpenEMRConnector
 {
     private string $openemrPath;
@@ -30,12 +32,12 @@ class OpenEMRConnector
         // Validate OpenEMR installation
         $globalsPath = $this->openemrPath . '/interface/globals.php';
         if (!file_exists($globalsPath)) {
-            throw new \Exception("OpenEMR globals.php not found at: $globalsPath");
+            throw new OpenEMRConnectorException("OpenEMR globals.php not found at: $globalsPath");
         }
 
         $standardTablesPath = $this->openemrPath . '/library/standard_tables_capture.inc.php';
         if (!file_exists($standardTablesPath)) {
-            throw new \Exception("OpenEMR standard_tables_capture.inc.php not found at: $standardTablesPath");
+            throw new OpenEMRConnectorException("OpenEMR standard_tables_capture.inc.php not found at: $standardTablesPath");
         }
 
         // Set up environment for CLI execution
@@ -49,12 +51,12 @@ class OpenEMRConnector
 
         // Verify database connection (using OpenEMR's own validation method)
         if (!isset($GLOBALS['dbh']) || !$GLOBALS['dbh']) {
-            throw new \Exception("OpenEMR database connection failed - check database configuration and ensure MySQL is running");
+            throw new OpenEMRConnectorException("OpenEMR database connection failed - check database configuration and ensure MySQL is running");
         }
 
         // Verify ADODB connection is working
         if (!isset($GLOBALS['adodb']['db']) || !$GLOBALS['adodb']['db']) {
-            throw new \Exception("OpenEMR ADODB database connection not established");
+            throw new OpenEMRConnectorException("OpenEMR ADODB database connection not established");
         }
 
         // Test connection with a simple query
@@ -62,10 +64,10 @@ class OpenEMRConnector
             if (function_exists('sqlQuery')) {
                 sqlQuery("SELECT 1");
             } else {
-                throw new \Exception("OpenEMR database functions not available");
+                throw new OpenEMRConnectorException("OpenEMR database functions not available");
             }
         } catch (\Exception $e) {
-            throw new \Exception("OpenEMR database connection test failed: " . $e->getMessage());
+            throw new OpenEMRConnectorException("OpenEMR database connection test failed: " . $e->getMessage());
         }
 
         $this->initialized = true;
@@ -101,7 +103,7 @@ class OpenEMRConnector
     public function getTempDir(): string
     {
         if (!$this->initialized) {
-            throw new \Exception("OpenEMR connector not initialized");
+            throw new OpenEMRConnectorException("OpenEMR connector not initialized");
         }
 
         return $GLOBALS['temporary_files_dir'] ?? sys_get_temp_dir();
@@ -113,14 +115,14 @@ class OpenEMRConnector
     public function executeSql(string $sql, array $params = []): mixed
     {
         if (!$this->initialized) {
-            throw new \Exception("OpenEMR connector not initialized");
+            throw new OpenEMRConnectorException("OpenEMR connector not initialized");
         }
 
         if (function_exists('sqlStatement')) {
             return sqlStatement($sql, $params);
         }
 
-        throw new \Exception("OpenEMR database functions not available");
+        throw new OpenEMRConnectorException("OpenEMR database functions not available");
     }
 
     /**
@@ -129,13 +131,13 @@ class OpenEMRConnector
     public function querySql(string $sql, array $params = []): mixed
     {
         if (!$this->initialized) {
-            throw new \Exception("OpenEMR connector not initialized");
+            throw new OpenEMRConnectorException("OpenEMR connector not initialized");
         }
 
         if (function_exists('sqlQuery')) {
             return sqlQuery($sql, $params);
         }
 
-        throw new \Exception("OpenEMR database functions not available");
+        throw new OpenEMRConnectorException("OpenEMR database functions not available");
     }
 }
