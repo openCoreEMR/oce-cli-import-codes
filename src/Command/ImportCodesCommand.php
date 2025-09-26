@@ -181,7 +181,7 @@ class ImportCodesCommand extends Command
             $trackingCodeType = ($codeType === 'SNOMED_RF2') ? 'SNOMED' : $codeType;
             $fileChecksum = $metadata['checksum'] ?: md5_file($filePath);
 
-            if ($this->isAlreadyLoaded($trackingCodeType, $metadata['revision_date'], $metadata['version'], $fileChecksum)) {
+            if ($this->importer->isAlreadyLoaded($trackingCodeType, $metadata['revision_date'], $metadata['version'], $fileChecksum)) {
                 $io->warning("Code package appears to be already loaded (same type, version, revision date, and file checksum)");
                 $io->note("Use --force flag to import anyway, or --dry-run to test without checking");
                 return Command::SUCCESS;
@@ -293,18 +293,5 @@ class ImportCodesCommand extends Command
     /**
      * Check if a code package is already loaded with the same metadata
      */
-    private function isAlreadyLoaded(string $codeType, string $revisionDate, string $version, string $fileChecksum): bool
-    {
-        if (!function_exists('sqlQuery')) {
-            return false;
-        }
-
-        $result = sqlQuery(
-            "SELECT COUNT(*) as count FROM `standardized_tables_track` WHERE `name` = ? AND `revision_date` = ? AND `revision_version` = ? AND `file_checksum` = ?",
-            array($codeType, $revisionDate, $version, $fileChecksum)
-        );
-
-        return $result && $result['count'] > 0;
-    }
 
 }

@@ -23,6 +23,7 @@ class CodeImporter
     private ?string $currentLockName = null;
     private int $lockRetryAttempts = 10;
     private int $lockRetryDelaySeconds = 30;
+    private bool $waitedForLock = false;
 
     /**
      * Set custom temporary directory
@@ -102,6 +103,12 @@ class CodeImporter
         $this->acquireLock($codeType);
 
         try {
+            // If we waited for the lock, check if vocabulary was already imported
+            if ($this->waitedForLock && $this->isVocabularyLoaded($codeType)) {
+                echo "Vocabulary {$codeType} was already imported by another process. Skipping import.\n";
+                return;
+            }
+
             switch ($codeType) {
                 case 'RXNORM':
                     $this->importRxnorm($isWindows);
@@ -229,6 +236,48 @@ class CodeImporter
     }
 
     /**
+     * Check if vocabulary is already loaded by examining standardized_tables_track
+     */
+    public function isAlreadyLoaded(string $codeType, string $revisionDate, string $version, string $fileChecksum): bool
+    {
+        if (!function_exists('sqlQuery')) {
+            return false;
+        }
+
+        $result = sqlQuery(
+            "SELECT COUNT(*) as count FROM `standardized_tables_track` WHERE `name` = ? AND `revision_date` = ? AND `revision_version` = ? AND `file_checksum` = ?",
+            array($codeType, $revisionDate, $version, $fileChecksum)
+        );
+
+        return $result && $result['count'] > 0;
+    }
+
+    /**
+     * Check if any version of vocabulary is loaded (simpler check for post-lock validation)
+     */
+    public function isVocabularyLoaded(string $codeType): bool
+    {
+        if (!function_exists('sqlQuery')) {
+            return false;
+        }
+
+        // Use SNOMED for tracking regardless of RF2 format to match OpenEMR expectations
+        $trackingCodeType = ($codeType === 'SNOMED_RF2') ? 'SNOMED' : $codeType;
+
+        try {
+            $result = sqlQuery(
+                "SELECT COUNT(*) as count FROM standardized_tables_track WHERE name = ?",
+                [$trackingCodeType]
+            );
+
+            return $result && $result['count'] > 0;
+        } catch (\Exception $e) {
+            // If query fails, assume not loaded to be safe
+            return false;
+        }
+    }
+
+    /**
      * Update tracking table
      */
     public function updateTracking(string $type, string $revision, string $version, string $fileChecksum): bool
@@ -293,6 +342,7 @@ class CodeImporter
 
             if ($attempt < $this->lockRetryAttempts) {
                 echo "Lock is held by another process. Waiting {$delay} seconds before retry {$attempt}/{$this->lockRetryAttempts}...\n";
+                $this->waitedForLock = true;
                 sleep($delay);
 
                 // Exponential backoff with jitter (cap at 5 minutes)
@@ -349,6 +399,7 @@ class CodeImporter
             error_log("Warning: Failed to release database lock '{$this->currentLockName}': " . $e->getMessage());
         } finally {
             $this->currentLockName = null;
+            $this->waitedForLock = false;
         }
     }
 
