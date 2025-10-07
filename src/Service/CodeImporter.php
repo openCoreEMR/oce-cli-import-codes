@@ -393,7 +393,9 @@ class CodeImporter
         // If lock name exceeds this limit, use a hash instead
         if (strlen($lockName) > 64) {
             $originalLockName = $lockName;
-            $lockName = 'oe-vocab-' . md5($dbName . '-' . $codeType);
+            // Use SHA-256 base64-encoded (44 characters) for better collision resistance
+            $hash = base64_encode(hash('sha256', $dbName . '-' . $codeType, true));
+            $lockName = 'oe-vocab-' . $hash;
             $this->logJson('warning', 'Lock name exceeds MySQL 64-character limit, using hash', [
                 'original_lock_name' => $originalLockName,
                 'hashed_lock_name' => $lockName,
