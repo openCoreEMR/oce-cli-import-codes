@@ -302,6 +302,79 @@ class CodeImporter
     }
 
     /**
+     * Get our own MySQL connection ID
+     */
+    private function getOurConnectionId(): ?int
+    {
+        if (!function_exists('sqlQuery')) {
+            return null;
+        }
+
+        try {
+            $result = sqlQuery("SELECT CONNECTION_ID() as connection_id");
+
+            if ($result && $result['connection_id'] !== null) {
+                return (int)$result['connection_id'];
+            }
+        } catch (\Exception $e) {
+            $this->logJson('warning', 'Could not retrieve our connection ID', [
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the connection ID holding a lock
+     */
+    private function getLockHolderConnectionId(string $lockName): ?int
+    {
+        if (!function_exists('sqlQuery')) {
+            return null;
+        }
+
+        try {
+            $result = sqlQuery("SELECT IS_USED_LOCK(?) as connection_id", [$lockName]);
+
+            if ($result && $result['connection_id'] !== null) {
+                return (int)$result['connection_id'];
+            }
+        } catch (\Exception $e) {
+            $this->logJson('warning', 'Could not retrieve lock holder connection ID', [
+                'lock_name' => $lockName,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the current database name
+     */
+    private function getDatabaseName(): ?string
+    {
+        if (!function_exists('sqlQuery')) {
+            return null;
+        }
+
+        try {
+            $result = sqlQuery("SELECT DATABASE() as db_name");
+
+            if ($result && $result['db_name'] !== null) {
+                return $result['db_name'];
+            }
+        } catch (\Exception $e) {
+            $this->logJson('warning', 'Could not retrieve database name', [
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        return null;
+    }
+
+    /**
      * Acquire a database lock for the given code type to prevent concurrent imports
      */
     private function acquireLock(string $codeType): void
@@ -310,8 +383,24 @@ class CodeImporter
             throw new CodeImportException("OpenEMR database functions not available");
         }
 
-        // Create a unique lock name for this code type
-        $lockName = "openemr_vocab_import_{$codeType}";
+        // Create a unique lock name for this code type and database
+        // Include database name since GET_LOCK() is server-wide, not per-database
+        // MySQL has a 64-character limit on lock names in 5.7+
+        $dbName = $this->getDatabaseName() ?? 'unknown';
+        $lockName = "oe-vocab-import-{$dbName}-{$codeType}";
+
+        // MySQL lock names are limited to 64 characters (MySQL 5.7+)
+        // If lock name exceeds this limit, use a hash instead
+        if (strlen($lockName) > 64) {
+            $originalLockName = $lockName;
+            $lockName = 'oe-vocab-' . md5($dbName . '-' . $codeType);
+            $this->logJson('warning', 'Lock name exceeds MySQL 64-character limit, using hash', [
+                'original_lock_name' => $originalLockName,
+                'hashed_lock_name' => $lockName,
+                'original_length' => strlen($originalLockName)
+            ]);
+        }
+
         $this->currentLockName = $lockName;
 
         $attempt = 1;
@@ -322,7 +411,14 @@ class CodeImporter
             $result = sqlQuery("SELECT GET_LOCK(?, 10) as lock_result", [$lockName]);
 
             if ($result && $result['lock_result'] == 1) {
-                // Lock acquired successfully
+                // Lock acquired successfully - log our own connection ID for identification
+                $ourConnectionId = $this->getOurConnectionId();
+                $this->logJson('info', 'Database lock acquired', [
+                    'code_type' => $codeType,
+                    'lock_name' => $lockName,
+                    'connection_id' => $ourConnectionId,
+                    'pid' => getmypid()
+                ]);
                 return;
             }
 
@@ -334,18 +430,42 @@ class CodeImporter
             }
 
             // Lock is held by another process ($result['lock_result'] == 0)
+            // Try to get the connection ID holding the lock for debugging
+            $lockHolderConnectionId = null;
+            try {
+                $lockHolderConnectionId = $this->getLockHolderConnectionId($lockName);
+            } catch (\Exception $e) {
+                // If we can't get lock holder info, continue without it
+                $this->logJson('warning', 'Could not retrieve lock holder connection ID', [
+                    'lock_name' => $lockName,
+                    'error' => $e->getMessage()
+                ]);
+            }
+
             if ($this->lockRetryDelaySeconds == 0) {
                 // No retry mode - fail immediately
                 $this->currentLockName = null;
-                throw new DatabaseLockException("Failed to acquire database lock for {$codeType} import - another import is in progress and no-wait mode is enabled.");
+                $errorMsg = "Failed to acquire database lock for {$codeType} import - another import is in progress and no-wait mode is enabled.";
+
+                if ($lockHolderConnectionId !== null) {
+                    $errorMsg .= " Lock held by MySQL connection ID {$lockHolderConnectionId}.";
+                }
+
+                throw new DatabaseLockException($errorMsg);
             }
 
             if ($attempt < $this->lockRetryAttempts) {
-                $this->logJson('info', 'Lock is held by another process', [
+                $logData = [
                     'delay_seconds' => $delay,
                     'attempt' => $attempt,
                     'max_attempts' => $this->lockRetryAttempts
-                ]);
+                ];
+
+                if ($lockHolderConnectionId !== null) {
+                    $logData['lock_holder_connection_id'] = $lockHolderConnectionId;
+                }
+
+                $this->logJson('info', 'Lock is held by another process', $logData);
                 $this->waitedForLock = true;
                 sleep($delay);
 
@@ -356,7 +476,13 @@ class CodeImporter
                 // Final attempt failed
                 $this->currentLockName = null;
                 $totalWaitTime = $this->calculateTotalWaitTime();
-                throw new DatabaseLockException("Failed to acquire database lock for {$codeType} import after {$this->lockRetryAttempts} attempts ({$totalWaitTime} seconds total). Another import may still be in progress.");
+                $errorMsg = "Failed to acquire database lock for {$codeType} import after {$this->lockRetryAttempts} attempts ({$totalWaitTime} seconds total). Another import may still be in progress.";
+
+                if ($lockHolderConnectionId !== null) {
+                    $errorMsg .= " Lock held by MySQL connection ID {$lockHolderConnectionId}.";
+                }
+
+                throw new DatabaseLockException($errorMsg);
             }
         }
     }
@@ -392,7 +518,9 @@ class CodeImporter
 
         if (!function_exists('sqlQuery')) {
             // Log warning but don't throw exception during cleanup
-            error_log("Warning: Could not release database lock - OpenEMR functions not available");
+            $this->logJson('warning', 'Could not release database lock - OpenEMR functions not available', [
+                'lock_name' => $this->currentLockName
+            ]);
             return;
         }
 
@@ -400,7 +528,10 @@ class CodeImporter
             sqlQuery("SELECT RELEASE_LOCK(?)", [$this->currentLockName]);
         } catch (\Exception $e) {
             // Log error but don't throw exception during cleanup
-            error_log("Warning: Failed to release database lock '{$this->currentLockName}': " . $e->getMessage());
+            $this->logJson('warning', 'Failed to release database lock', [
+                'lock_name' => $this->currentLockName,
+                'error' => $e->getMessage()
+            ]);
         } finally {
             $this->currentLockName = null;
             $this->waitedForLock = false;
