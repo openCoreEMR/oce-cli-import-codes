@@ -433,16 +433,7 @@ class CodeImporter
 
             // Lock is held by another process ($result['lock_result'] == 0)
             // Try to get the connection ID holding the lock for debugging
-            $lockHolderConnectionId = null;
-            try {
-                $lockHolderConnectionId = $this->getLockHolderConnectionId($lockName);
-            } catch (\Exception $e) {
-                // If we can't get lock holder info, continue without it
-                $this->logJson('warning', 'Could not retrieve lock holder connection ID', [
-                    'lock_name' => $lockName,
-                    'error' => $e->getMessage()
-                ]);
-            }
+            $lockHolderConnectionId = $this->getLockHolderConnectionId($lockName);
 
             if ($this->lockRetryDelaySeconds == 0) {
                 // No retry mode - fail immediately
