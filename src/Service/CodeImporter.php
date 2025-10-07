@@ -7,7 +7,7 @@
  * @package   OpenCoreEMR\CLI\ImportCodes
  * @link      https://opencoreemr.com
  * @author    Michael A. Smith <michael@opencoreemr.com>
- * @copyright Copyright (c) 2025 OpenCoreEMR Inc
+ * @copyright Copyright (c) 2025-2026 OpenCoreEMR Inc
  * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
  */
 
@@ -25,7 +25,10 @@ class CodeImporter
     private bool $waitedForLock = false;
 
     /**
-     * Set custom temporary directory
+     * Validate temporary directory is writable
+     *
+     * Note: This method validates but doesn't store the temp directory.
+     * The actual temp dir comes from $GLOBALS['temporary_files_dir'].
      */
     public function setTempDir(string $tempDir): void
     {
@@ -306,6 +309,140 @@ class CodeImporter
     }
 
     /**
+     * Get our own MySQL connection ID
+     */
+    private function getOurConnectionId(): ?int
+    {
+        if (!function_exists('sqlQuery')) {
+            return null;
+        }
+
+        try {
+            $result = sqlQuery("SELECT CONNECTION_ID() as connection_id");
+
+            if ($result && $result['connection_id'] !== null) {
+                return (int)$result['connection_id'];
+            }
+        } catch (\Throwable $e) {
+            $this->logJson('warning', 'Could not retrieve our connection ID', [
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Get information about the process holding a lock
+     *
+     * @return array{connection_id: int, host: ?string, user: ?string, time: ?int, state: ?string}|null
+     */
+    private function getLockHolderInfo(string $lockName): ?array
+    {
+        if (!function_exists('sqlQuery')) {
+            return null;
+        }
+
+        try {
+            $result = sqlQuery("SELECT IS_USED_LOCK(?) as connection_id", [$lockName]);
+
+            if (!$result || $result['connection_id'] === null) {
+                return null;
+            }
+
+            $connectionId = (int)$result['connection_id'];
+
+            // Try to get more details from processlist.
+            // Note: The OpenEMR database user typically lacks the PROCESS privilege
+            // required to query INFORMATION_SCHEMA.PROCESSLIST, so this will often
+            // return no additional info beyond the connection ID.
+            $host = null;
+            $user = null;
+            $time = null;
+            $state = null;
+
+            try {
+                $processInfo = sqlQuery(
+                    "SELECT HOST, USER, TIME, STATE FROM INFORMATION_SCHEMA.PROCESSLIST WHERE ID = ?",
+                    [$connectionId]
+                );
+
+                if ($processInfo) {
+                    $host = $processInfo['HOST'] ?? null;
+                    $user = $processInfo['USER'] ?? null;
+                    $time = isset($processInfo['TIME']) ? (int)$processInfo['TIME'] : null;
+                    $state = $processInfo['STATE'] ?? null;
+                }
+            } catch (\Throwable) {
+                // User likely lacks PROCESS privilege - continue with just connection ID
+            }
+
+            return [
+                'connection_id' => $connectionId,
+                'host' => $host,
+                'user' => $user,
+                'time' => $time,
+                'state' => $state,
+            ];
+        } catch (\Throwable $e) {
+            $this->logJson('warning', 'Could not retrieve lock holder info', [
+                'lock_name' => $lockName,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Format lock holder info for error messages
+     *
+     * @param array{connection_id: int, host: ?string, user: ?string, time: ?int, state: ?string}|null $info
+     */
+    private function formatLockHolderMessage(?array $info): string
+    {
+        if ($info === null) {
+            return '';
+        }
+
+        $parts = ["Lock held by MySQL connection {$info['connection_id']}"];
+
+        if ($info['host'] !== null) {
+            $parts[] = "from {$info['host']}";
+        }
+
+        if ($info['time'] !== null) {
+            $parts[] = "for {$info['time']}s";
+        }
+
+        return ' ' . implode(' ', $parts) . '.';
+    }
+
+    /**
+     * Get the current database name
+     */
+    private function getDatabaseName(): ?string
+    {
+        if (!function_exists('sqlQuery')) {
+            return null;
+        }
+
+        try {
+            $result = sqlQuery("SELECT DATABASE() as db_name");
+
+            if ($result && $result['db_name'] !== null) {
+                return $result['db_name'];
+            }
+        } catch (\Throwable $e) {
+            $this->logJson('warning', 'Could not retrieve database name', [
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        return null;
+    }
+
+    /**
      * Acquire a database lock for the given code type to prevent concurrent imports
      */
     private function acquireLock(string $codeType): void
@@ -314,8 +451,26 @@ class CodeImporter
             throw new CodeImportException("OpenEMR database functions not available");
         }
 
-        // Create a unique lock name for this code type
-        $lockName = "openemr_vocab_import_{$codeType}";
+        // Create a unique lock name for this code type and database
+        // Include database name since GET_LOCK() is server-wide, not per-database
+        // MySQL has a 64-character limit on lock names in 5.7+
+        $dbName = $this->getDatabaseName() ?? 'unknown';
+        $lockName = "oe-vocab-import-{$dbName}-{$codeType}";
+
+        // MySQL lock names are limited to 64 characters (MySQL 5.7+)
+        // If lock name exceeds this limit, use a hash instead
+        if (strlen($lockName) > 64) {
+            $originalLockName = $lockName;
+            // Use SHA-256 base64-encoded (44 characters) for better collision resistance
+            $hash = base64_encode(hash('sha256', $dbName . '-' . $codeType, true));
+            $lockName = 'oe-vocab-' . $hash;
+            $this->logJson('warning', 'Lock name exceeds MySQL 64-character limit, using hash', [
+                'original_lock_name' => $originalLockName,
+                'hashed_lock_name' => $lockName,
+                'original_length' => strlen($originalLockName)
+            ]);
+        }
+
         $this->currentLockName = $lockName;
 
         $attempt = 1;
@@ -325,8 +480,15 @@ class CodeImporter
             // Attempt to acquire the lock with a 10-second timeout per attempt
             $result = sqlQuery("SELECT GET_LOCK(?, 10) as lock_result", [$lockName]);
 
-            if ($result && $result['lock_result'] == 1) {
-                // Lock acquired successfully
+            if ($result && (int) ($result['lock_result'] ?? 0) === 1) {
+                // Lock acquired successfully - log our own connection ID for identification
+                $ourConnectionId = $this->getOurConnectionId();
+                $this->logJson('info', 'Database lock acquired', [
+                    'code_type' => $codeType,
+                    'lock_name' => $lockName,
+                    'connection_id' => $ourConnectionId,
+                    'pid' => getmypid()
+                ]);
                 return;
             }
 
@@ -340,21 +502,31 @@ class CodeImporter
             }
 
             // Lock is held by another process ($result['lock_result'] == 0)
+            // Try to get info about the process holding the lock for debugging
+            $lockHolderInfo = $this->getLockHolderInfo($lockName);
+
             if ($this->lockRetryDelaySeconds === 0) {
                 // No retry mode - fail immediately
                 $this->currentLockName = null;
-                throw new DatabaseLockException(
-                    "Failed to acquire database lock for {$codeType} import - " .
-                    "another import is in progress and no-wait mode is enabled."
-                );
+                $errorMsg = "Failed to acquire database lock for {$codeType} import - " .
+                    "another import is in progress and no-wait mode is enabled.";
+                $errorMsg .= $this->formatLockHolderMessage($lockHolderInfo);
+
+                throw new DatabaseLockException($errorMsg);
             }
 
             if ($attempt < $this->lockRetryAttempts) {
-                $this->logJson('info', 'Lock is held by another process', [
+                $logData = [
                     'delay_seconds' => $delay,
                     'attempt' => $attempt,
                     'max_attempts' => $this->lockRetryAttempts
-                ]);
+                ];
+
+                if ($lockHolderInfo !== null) {
+                    $logData['lock_holder'] = $lockHolderInfo;
+                }
+
+                $this->logJson('info', 'Lock is held by another process', $logData);
                 $this->waitedForLock = true;
                 sleep($delay);
 
@@ -366,11 +538,12 @@ class CodeImporter
                 // Final attempt failed
                 $this->currentLockName = null;
                 $totalWaitTime = $this->calculateTotalWaitTime();
-                throw new DatabaseLockException(
-                    "Failed to acquire database lock for {$codeType} import after " .
+                $errorMsg = "Failed to acquire database lock for {$codeType} import after " .
                     "{$this->lockRetryAttempts} attempts ({$totalWaitTime} seconds total). " .
-                    "Another import may still be in progress."
-                );
+                    "Another import may still be in progress.";
+                $errorMsg .= $this->formatLockHolderMessage($lockHolderInfo);
+
+                throw new DatabaseLockException($errorMsg);
             }
         }
     }
@@ -406,7 +579,9 @@ class CodeImporter
 
         if (!function_exists('sqlQuery')) {
             // Log warning but don't throw exception during cleanup
-            error_log("Warning: Could not release database lock - OpenEMR functions not available");
+            $this->logJson('warning', 'Could not release database lock - OpenEMR functions not available', [
+                'lock_name' => $this->currentLockName
+            ]);
             return;
         }
 
@@ -414,7 +589,10 @@ class CodeImporter
             sqlQuery("SELECT RELEASE_LOCK(?)", [$this->currentLockName]);
         } catch (\Throwable $e) {
             // Log error but don't throw exception during cleanup
-            error_log("Warning: Failed to release database lock '{$this->currentLockName}': " . $e->getMessage());
+            $this->logJson('warning', 'Failed to release database lock', [
+                'lock_name' => $this->currentLockName,
+                'error' => $e->getMessage()
+            ]);
         } finally {
             $this->currentLockName = null;
             $this->waitedForLock = false;

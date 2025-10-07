@@ -140,8 +140,8 @@
         "rector": "rector process --dry-run",
         "rector-fix": "rector process",
         "test": "@phpunit",
-        "test:unit": "vendor/bin/phpunit --testsuite unit --testdox",
+        "test:e2e": "vendor/bin/phpunit -c phpunit-integration.xml --testsuite e2e --testdox",
         "test:integration": "vendor/bin/phpunit -c phpunit-integration.xml --testsuite integration --testdox",
-        "test:e2e": "vendor/bin/phpunit -c phpunit-integration.xml --testsuite e2e --testdox"
+        "test:unit": "vendor/bin/phpunit --testsuite unit --testdox"
     }
 }
