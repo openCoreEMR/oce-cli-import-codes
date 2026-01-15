@@ -28,30 +28,68 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 class ImportCodesCommand extends Command
 {
     private const SUPPORTED_TYPES = ['RXNORM', 'SNOMED', 'SNOMED_RF2', 'ICD9', 'ICD10', 'CQM_VALUESET'];
-    private OutputInterface $output;
+    private ?OutputInterface $output = null;
 
-    public function __construct(private readonly ?CodeImporter $importer = new CodeImporter(), private readonly ?OpenEMRConnector $connector = new OpenEMRConnector(), private readonly ?MetadataDetector $detector = new MetadataDetector())
-    {
+    public function __construct(
+        private readonly CodeImporter $importer = new CodeImporter(),
+        private readonly OpenEMRConnector $connector = new OpenEMRConnector(),
+        private readonly MetadataDetector $detector = new MetadataDetector()
+    ) {
         parent::__construct();
     }
 
     protected function configure()
     {
+        $supportedTypes = implode(', ', self::SUPPORTED_TYPES);
+        $codeTypeOptions = implode('|', self::SUPPORTED_TYPES);
+
         $this
             ->setName('import')
             ->setDescription("Import standardized code tables into OpenEMR with automatic detection")
-            ->setHelp("This command automatically detects code type, version, and revision from filenames and imports medical code tables into OpenEMR.\n\nSupported code types: " . implode(', ', self::SUPPORTED_TYPES))
+            ->setHelp(
+                "This command automatically detects code type, version, and revision from " .
+                "filenames and imports medical code tables into OpenEMR.\n\n" .
+                "Supported code types: " . $supportedTypes
+            )
             ->addArgument('file-path', InputArgument::REQUIRED, 'Path to the code file archive (zip file)')
-            ->addOption('code-type', null, InputOption::VALUE_REQUIRED, 'Override auto-detected code type (' . implode('|', self::SUPPORTED_TYPES) . ')')
-            ->addOption('openemr-path', null, InputOption::VALUE_REQUIRED, 'Path to OpenEMR installation', '/var/www/localhost/htdocs/openemr')
+            ->addOption(
+                'code-type',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Override auto-detected code type (' . $codeTypeOptions . ')'
+            )
+            ->addOption(
+                'openemr-path',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Path to OpenEMR installation',
+                '/var/www/localhost/htdocs/openemr'
+            )
             ->addOption('site', null, InputOption::VALUE_REQUIRED, 'Name of OpenEMR site', 'default')
             ->addOption('windows', 'w', InputOption::VALUE_NONE, 'Use Windows-specific processing (RXNORM only)')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Perform a dry run without making database changes')
             ->addOption('cleanup', null, InputOption::VALUE_NONE, 'Clean up temporary files after import')
             ->addOption('temp-dir', null, InputOption::VALUE_REQUIRED, 'Custom temporary directory path')
-            ->addOption('force', null, InputOption::VALUE_NONE, 'Force import even if the same version appears to be already loaded')
-            ->addOption('lock-retry-attempts', null, InputOption::VALUE_REQUIRED, 'Number of times to retry lock acquisition (default: 10)', 10)
-            ->addOption('lock-retry-delay', null, InputOption::VALUE_REQUIRED, 'Initial delay between lock retries in seconds (default: 30, set to 0 for no retries)', 30)
+            ->addOption(
+                'force',
+                null,
+                InputOption::VALUE_NONE,
+                'Force import even if the same version appears to be already loaded'
+            )
+            ->addOption(
+                'lock-retry-attempts',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Number of times to retry lock acquisition (default: 10)',
+                10
+            )
+            ->addOption(
+                'lock-retry-delay',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Delay between lock retries in seconds (default: 30, 0 for no retries)',
+                30
+            )
             ->addUsage('/path/to/RxNorm_full_01012024.zip --openemr-path=/var/www/openemr')
             ->addUsage('/path/to/SnomedCT_USEditionRF2_PRODUCTION_20240301T120000Z.zip')
             ->addUsage('/path/to/icd10cm_order_2024.txt.zip --cleanup');
@@ -61,19 +99,31 @@ class ImportCodesCommand extends Command
     {
         $this->output = $output;
 
+        /** @var string $filePath */
         $filePath = $input->getArgument('file-path');
+        /** @var string $openemrPath */
         $openemrPath = $input->getOption('openemr-path');
+        /** @var string $site */
         $site = $input->getOption('site') ?? 'default';
+        /** @var bool $isWindows */
         $isWindows = $input->getOption('windows');
+        /** @var bool $dryRun */
         $dryRun = $input->getOption('dry-run');
+        /** @var bool $cleanup */
         $cleanup = $input->getOption('cleanup');
+        /** @var string|null $tempDir */
         $tempDir = $input->getOption('temp-dir');
+        /** @var bool $force */
         $force = $input->getOption('force');
-        $lockRetryAttempts = (int) $input->getOption('lock-retry-attempts');
-        $lockRetryDelay = (int) $input->getOption('lock-retry-delay');
+        /** @var int|string|null $lockRetryAttemptsOpt */
+        $lockRetryAttemptsOpt = $input->getOption('lock-retry-attempts');
+        $lockRetryAttempts = (int) ($lockRetryAttemptsOpt ?? 10);
+        /** @var int|string|null $lockRetryDelayOpt */
+        $lockRetryDelayOpt = $input->getOption('lock-retry-delay');
+        $lockRetryDelay = (int) ($lockRetryDelayOpt ?? 30);
 
         // Resolve relative paths to absolute paths
-        if (!$this->is_absolute_path($filePath)) {
+        if (!$this->isAbsolutePath($filePath)) {
             $filePath = getcwd() . DIRECTORY_SEPARATOR . $filePath;
         }
         $filePath = realpath($filePath) ?: $filePath;
@@ -90,11 +140,15 @@ class ImportCodesCommand extends Command
         }
 
         // Auto-detect code type, or use override
+        /** @var string|null $codeTypeOverride */
         $codeTypeOverride = $input->getOption('code-type');
-        if ($codeTypeOverride) {
-            $codeType = strtoupper((string) $codeTypeOverride);
+        if ($codeTypeOverride !== null && $codeTypeOverride !== '') {
+            $codeType = strtoupper($codeTypeOverride);
             if (!in_array($codeType, self::SUPPORTED_TYPES)) {
-                $this->logJson('error', 'Unsupported code type', ['code_type' => $codeType, 'supported_types' => self::SUPPORTED_TYPES]);
+                $this->logJson('error', 'Unsupported code type', [
+                    'code_type' => $codeType,
+                    'supported_types' => self::SUPPORTED_TYPES
+                ]);
                 return Command::FAILURE;
             }
         } else {
@@ -123,7 +177,7 @@ class ImportCodesCommand extends Command
 
         // Auto-detect metadata from filename
         $metadata = $this->detector->detectFromFile($filePath, $codeType);
-        $usExtension = $metadata['us_extension'];
+        $usExtension = (bool) ($metadata['us_extension'] ?? false);
 
         // Log configuration with detected metadata
         $this->logJson('info', 'Starting OpenEMR Standardized Codes Import', [
@@ -168,11 +222,24 @@ class ImportCodesCommand extends Command
         $this->importer->setLockRetryConfig($lockRetryAttempts, $lockRetryDelay);
 
         // Check if already loaded (unless force flag is set)
-        if (!$force && !$dryRun && $metadata['supported'] && $metadata['revision_date'] && $metadata['version']) {
-            $trackingCodeType = ($codeType === 'SNOMED_RF2') ? 'SNOMED' : $codeType;
-            $fileChecksum = $metadata['checksum'] ?: md5_file($filePath);
+        $revisionDate = isset($metadata['revision_date']) && is_string($metadata['revision_date'])
+            ? $metadata['revision_date'] : '';
+        $version = isset($metadata['version']) && is_string($metadata['version'])
+            ? $metadata['version'] : '';
+        $checksum = isset($metadata['checksum']) && is_string($metadata['checksum'])
+            ? $metadata['checksum'] : '';
 
-            if ($this->importer->isAlreadyLoaded($trackingCodeType, $metadata['revision_date'], $metadata['version'], $fileChecksum)) {
+        if (!$force && !$dryRun && $metadata['supported'] && $revisionDate !== '' && $version !== '') {
+            $trackingCodeType = ($codeType === 'SNOMED_RF2') ? 'SNOMED' : $codeType;
+            $fileChecksum = $checksum !== '' ? $checksum : (md5_file($filePath) ?: '');
+
+            $isLoaded = $this->importer->isAlreadyLoaded(
+                $trackingCodeType,
+                $revisionDate,
+                $version,
+                $fileChecksum
+            );
+            if ($isLoaded) {
                 $this->logJson('warning', 'Code package appears to be already loaded', [
                     'type' => $trackingCodeType,
                     'version' => $metadata['version'],
@@ -209,26 +276,36 @@ class ImportCodesCommand extends Command
             if (!$dryRun) {
                 $this->logJson('info', 'Starting tracking update');
 
-                if ($metadata['supported'] && $metadata['revision_date'] && $metadata['version']) {
-                    $fileChecksum = $metadata['checksum'] ?: md5_file($filePath);
+                if ($metadata['supported'] && $revisionDate !== '' && $version !== '') {
+                    $fileChecksum = $checksum !== '' ? $checksum : (md5_file($filePath) ?: '');
                     // Use SNOMED for tracking regardless of RF1/RF2 format to match OpenEMR web UI expectations
                     $trackingCodeType = ($codeType === 'SNOMED_RF2') ? 'SNOMED' : $codeType;
-                    if ($this->importer->updateTracking($trackingCodeType, $metadata['revision_date'], $metadata['version'], $fileChecksum)) {
+                    $updated = $this->importer->updateTracking(
+                        $trackingCodeType,
+                        $revisionDate,
+                        $version,
+                        $fileChecksum
+                    );
+                    if ($updated) {
                         $this->logJson('success', 'Tracking table updated', [
                             'type' => $trackingCodeType,
-                            'version' => $metadata['version'],
-                            'revision_date' => $metadata['revision_date']
+                            'version' => $version,
+                            'revision_date' => $revisionDate
                         ]);
                     } else {
                         $this->logJson('warning', 'Failed to update tracking table');
                     }
                 } else {
                     $missing = array_filter([
-                        $metadata['revision_date'] ? null : 'revision_date',
-                        $metadata['version'] ? null : 'version',
+                        $revisionDate !== '' ? null : 'revision_date',
+                        $version !== '' ? null : 'version',
                         $metadata['supported'] ? null : 'supported format'
                     ]);
-                    $this->logJson('warning', 'Metadata incomplete - tracking table not updated', ['missing' => $missing]);
+                    $this->logJson(
+                        'warning',
+                        'Metadata incomplete - tracking table not updated',
+                        ['missing' => $missing]
+                    );
                 }
             }
 
@@ -253,8 +330,13 @@ class ImportCodesCommand extends Command
         }
     }
 
-    private function performImport(string $codeType, bool $isWindows, bool $usExtension, bool $dryRun, string $filePath = ''): void
-    {
+    private function performImport(
+        string $codeType,
+        bool $isWindows,
+        bool $usExtension,
+        bool $dryRun,
+        string $filePath = ''
+    ): void {
         $this->logJson('info', 'Starting import', ['code_type' => $codeType]);
 
         if (!$dryRun) {
@@ -273,7 +355,7 @@ class ImportCodesCommand extends Command
         $this->logJson('info', 'Import completed', ['code_type' => $codeType]);
     }
 
-    private function is_absolute_path(string $path): bool
+    private function isAbsolutePath(string $path): bool
     {
         // Unix/Linux absolute path starts with /
         if (str_starts_with($path, '/')) {
@@ -284,11 +366,16 @@ class ImportCodesCommand extends Command
     }
 
     /**
-     * Check if a code package is already loaded with the same metadata
+     * Log a JSON-formatted message to the output
+     *
+     * @param array<string, mixed> $data
      */
-
     private function logJson(string $level, string $message, array $data = []): void
     {
+        if (!$this->output instanceof \Symfony\Component\Console\Output\OutputInterface) {
+            return;
+        }
+
         $logEntry = [
             'timestamp' => gmdate('Y-m-d\TH:i:s.v\Z'),
             'level' => strtoupper($level),
@@ -301,6 +388,8 @@ class ImportCodesCommand extends Command
         }
 
         $json = json_encode($logEntry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        $this->output->writeln($json);
+        if ($json !== false) {
+            $this->output->writeln($json);
+        }
     }
 }

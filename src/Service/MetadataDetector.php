@@ -17,6 +17,8 @@ class MetadataDetector
 {
     /**
      * Use OpenEMR's existing detection logic by directly processing the filename
+     *
+     * @return array<string, mixed>
      */
     public function detectFromFile(string $filePath, string $codeType): array
     {
@@ -56,11 +58,14 @@ class MetadataDetector
         if ($db === 'RXNORM') {
             if (preg_match("/RxNorm_full_(\\d{8}).zip/", $fileName, $matches)) {
                 $version = "Standard";
-                $date_release = substr($matches[1], 4) . "-" . substr($matches[1], 0, 2) . "-" . substr($matches[1], 2, -4);
+                // RXNORM date format: MMDDYYYY
+                $m = $matches[1];
+                $date_release = substr($m, 4) . "-" . substr($m, 0, 2) . "-" . substr($m, 2, 2);
                 $revisions[] = ['date' => $date_release, 'version' => $version, 'path' => $filePath];
             }
         } elseif ($db === 'SNOMED') {
             // All SNOMED patterns from OpenEMR's list_staged.php
+            // phpcs:disable Generic.Files.LineLength.TooLong
             $patterns = [
                 ["/SnomedCT_INT_(\\d{8}).zip/", "International:English"],
                 ["/SnomedCT_Release_INT_(\\d{8}).zip/", "International:English"],
@@ -75,6 +80,7 @@ class MetadataDetector
                 ["/SnomedCT_ManagedServiceUS_PRODUCTION_US\\d{7}_([0-9a-zA-Z]{8})T[0-9Z]{7}.zip/", "Complete US Extension", true],
                 ["/SnomedCT_SpanishRelease-es_PRODUCTION_(\\d{8})[0-9a-zA-Z]{8}.zip/", "International:Spanish", true],
             ];
+            // phpcs:enable
 
             foreach ($patterns as $pattern) {
                 $regex = $pattern[0];
@@ -85,8 +91,9 @@ class MetadataDetector
                     // Fix date parsing - handle both 8-digit dates and mixed formats
                     $dateStr = $matches[1];
                     if (strlen($dateStr) === 8 && is_numeric($dateStr)) {
-                        // Format: YYYYMMDD
-                        $date_release = substr($dateStr, 0, 4) . "-" . substr($dateStr, 4, 2) . "-" . substr($dateStr, 6, 2);
+                        // Format: YYYYMMDD -> YYYY-MM-DD
+                        $date_release = substr($dateStr, 0, 4) . "-"
+                            . substr($dateStr, 4, 2) . "-" . substr($dateStr, 6, 2);
                     } else {
                         // Handle other formats or fallback
                         $date_release = date('Y-m-d'); // Use current date as fallback
@@ -103,20 +110,30 @@ class MetadataDetector
         } elseif ($db === 'CQM_VALUESET') {
             if (preg_match("/e[p,c]_.*_cms_(\\d{8}).xml.zip/", $fileName, $matches)) {
                 $version = "Standard";
-                $date_release = substr($matches[1], 0, 4) . "-" . substr($matches[1], 4, 2) . "-" . substr($matches[1], 6, 2);
+                // CQM date format: YYYYMMDD -> YYYY-MM-DD
+                $m = $matches[1];
+                $date_release = substr($m, 0, 4) . "-" . substr($m, 4, 2) . "-" . substr($m, 6, 2);
                 $revisions[] = ['date' => $date_release, 'version' => $version, 'path' => $filePath];
             }
         } elseif (is_numeric(strpos($db, "ICD"))) {
             // For ICD, use database lookup if available
             if (function_exists('sqlQuery')) {
-                $qry_str = "SELECT `load_checksum`,`load_source`,`load_release_date` FROM `supported_external_dataloads` WHERE `load_type` = ? and `load_filename` = ? and `load_checksum` = ? ORDER BY `load_release_date` DESC";
+                $qry_str = "SELECT `load_checksum`, `load_source`, `load_release_date` "
+                    . "FROM `supported_external_dataloads` "
+                    . "WHERE `load_type` = ? AND `load_filename` = ? AND `load_checksum` = ? "
+                    . "ORDER BY `load_release_date` DESC";
                 $file_checksum = md5_file($filePath);
                 $sqlReturn = sqlQuery($qry_str, [$db, $fileName, $file_checksum]);
 
                 if (!empty($sqlReturn)) {
                     $version = $sqlReturn['load_source'];
                     $date_release = $sqlReturn['load_release_date'];
-                    $revisions[] = ['date' => $date_release, 'version' => $version, 'path' => $filePath, 'checksum' => $file_checksum];
+                    $revisions[] = [
+                        'date' => $date_release,
+                        'version' => $version,
+                        'path' => $filePath,
+                        'checksum' => $file_checksum
+                    ];
                 }
             }
         }
@@ -164,6 +181,8 @@ class MetadataDetector
 
     /**
      * Get supported filename patterns for display
+     *
+     * @return array<string, list<string>>
      */
     public function getSupportedPatterns(): array
     {

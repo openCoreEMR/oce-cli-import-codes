@@ -22,7 +22,9 @@ parameters:
     # Ignore errors
     ignoreErrors:
         # OpenEMR global functions not available for static analysis
-        - '#Function (xlt|xla|xlj|text|attr|sqlStatement|sqlQuery|sqlFetchArray) not found#'
+        # reportUnmatched: false allows CI to pass when function_exists() guards are used
+        - message: '#Function (xlt|xla|xlj|text|attr|sqlStatement|sqlQuery|sqlFetchArray) not found#'
+          reportUnmatched: false
 
         # OpenEMR classes not available without full OpenEMR installation
         # reportUnmatched: false allows CI to pass when OpenEMR IS installed

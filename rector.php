@@ -35,4 +35,6 @@ return RectorConfig::configure()
     )
     ->withSkip([
         __DIR__ . '/vendor',
+        // Don't make constructor properties nullable - PHPStan needs them non-null
+        \Rector\TypeDeclaration\Rector\Property\TypedPropertyFromAssignsRector::class,
     ]);

@@ -37,7 +37,9 @@ class OpenEMRConnector
 
         $standardTablesPath = $this->openemrPath . '/library/standard_tables_capture.inc.php';
         if (!file_exists($standardTablesPath)) {
-            throw new OpenEMRConnectorException("OpenEMR standard_tables_capture.inc.php not found at: $standardTablesPath");
+            throw new OpenEMRConnectorException(
+                "OpenEMR standard_tables_capture.inc.php not found at: $standardTablesPath"
+            );
         }
 
         // Set up environment for CLI execution
@@ -51,7 +53,10 @@ class OpenEMRConnector
 
         // Verify database connection (using OpenEMR's own validation method)
         if (!isset($GLOBALS['dbh']) || !$GLOBALS['dbh']) {
-            throw new OpenEMRConnectorException("OpenEMR database connection failed - check database configuration and ensure MySQL is running");
+            throw new OpenEMRConnectorException(
+                "OpenEMR database connection failed - " .
+                "check database configuration and ensure MySQL is running"
+            );
         }
 
         // Verify ADODB connection is working
