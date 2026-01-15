@@ -1,8 +1,8 @@
 {
     "name": "opencoreemr/oce-cli-import-codes",
     "description": "OpenEMR CLI tool for importing standardized code tables (RXNORM, SNOMED, ICD, CQM_VALUESET), by OpenCoreEMR Inc",
-    "type": "library",
     "license": "GPL-3.0-or-later",
+    "type": "library",
     "keywords": [
         "openemr",
         "cli",
@@ -14,7 +14,6 @@
         "cqm",
         "healthcare"
     ],
-    "homepage": "https://opencoreemr.com",
     "authors": [
         {
             "name": "Michael A. Smith",
@@ -23,24 +22,84 @@
             "role": "Developer"
         }
     ],
+    "homepage": "https://opencoreemr.com",
     "support": {
+        "email": "support@opencoreemr.com",
         "issues": "https://github.com/opencoreemr/oce-cli-import-codes/issues",
-        "source": "https://github.com/opencoreemr/oce-cli-import-codes",
-        "email": "support@opencoreemr.com"
+        "source": "https://github.com/opencoreemr/oce-cli-import-codes"
     },
     "require": {
         "php": ">=8.2.0",
-        "ext-zip": "*",
-        "ext-xml": "*",
         "ext-simplexml": "*",
+        "ext-xml": "*",
+        "ext-zip": "*",
         "symfony/console": "^6.4",
-        "symfony/finder": "^6.4",
-        "symfony/filesystem": "^6.4"
+        "symfony/filesystem": "^6.4",
+        "symfony/finder": "^6.4"
     },
     "require-dev": {
-        "phpunit/phpunit": "^10.0",
-        "phpstan/phpstan": "^1.10"
+        "ergebnis/composer-normalize": "^2.44",
+        "openemr/openemr": ">=7.0.3.4 || 7.0.4.x-dev || dev-master",
+        "phpstan/phpstan": "^2.1",
+        "phpunit/phpunit": "^11.0",
+        "rector/rector": "^2.0",
+        "squizlabs/php_codesniffer": "^4.0"
     },
+    "repositories": [
+        {
+            "type": "package",
+            "package": {
+                "name": "openemr/openemr",
+                "version": "7.0.3.4",
+                "autoload": {
+                    "psr-4": {
+                        "OpenEMR\\": "src/"
+                    }
+                },
+                "source": {
+                    "type": "git",
+                    "url": "https://github.com/openemr/openemr.git",
+                    "reference": "v7_0_3_4"
+                }
+            }
+        },
+        {
+            "type": "package",
+            "package": {
+                "name": "openemr/openemr",
+                "version": "7.0.4.x-dev",
+                "autoload": {
+                    "psr-4": {
+                        "OpenEMR\\": "src/"
+                    }
+                },
+                "source": {
+                    "type": "git",
+                    "url": "https://github.com/openemr/openemr.git",
+                    "reference": "rel-704"
+                }
+            }
+        },
+        {
+            "type": "package",
+            "package": {
+                "name": "openemr/openemr",
+                "version": "dev-master",
+                "autoload": {
+                    "psr-4": {
+                        "OpenEMR\\": "src/"
+                    }
+                },
+                "source": {
+                    "type": "git",
+                    "url": "https://github.com/openemr/openemr.git",
+                    "reference": "master"
+                }
+            }
+        }
+    ],
+    "minimum-stability": "dev",
+    "prefer-stable": true,
     "autoload": {
         "psr-4": {
             "OpenCoreEMR\\CLI\\ImportCodes\\": "src/"
@@ -55,15 +114,31 @@
         "bin/oce-import-codes"
     ],
     "config": {
-        "sort-packages": true,
         "allow-plugins": {
+            "ergebnis/composer-normalize": true,
             "php-http/discovery": false
-        }
+        },
+        "sort-packages": true
     },
-    "minimum-stability": "stable",
-    "prefer-stable": true,
     "scripts": {
-        "test": "phpunit",
-        "analyse": "phpstan analyse src --level=5"
+        "_comment": "Composer scripts handle CODE QUALITY checks that work in any environment (local, Docker, CI). For infrastructure operations (Docker, database), use Taskfile instead.",
+        "check": [
+            "@php-lint",
+            "@phpcs",
+            "@phpstan",
+            "@rector"
+        ],
+        "fix": [
+            "@phpcbf",
+            "@rector-fix"
+        ],
+        "php-lint": "git ls-files -z '*.php' | xargs -0 -n1 php -l",
+        "phpcbf": "phpcbf",
+        "phpcs": "phpcs",
+        "phpstan": "phpstan --memory-limit=512M analyse",
+        "phpunit": "phpunit --testdox",
+        "rector": "rector process --dry-run",
+        "rector-fix": "rector process",
+        "test": "@phpunit"
     }
 }

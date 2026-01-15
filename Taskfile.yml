@@ -1,0 +1,300 @@
+# https://taskfile.dev
+# Task runner for OpenEMR CLI Import Codes development
+#
+# SEPARATION OF CONCERNS:
+#   Taskfile: Infrastructure operations (Docker, database, CLI execution)
+#   Composer: Code quality checks (phpcs, phpstan, rector)
+#
+# WHY BOTH?
+#   - Composer scripts work in ANY environment (local, Docker, CI)
+#   - Taskfile provides convenience wrappers and Docker orchestration
+#   - Prevents bloated composer.json with Docker-specific commands
+#   - Taskfile can call Composer scripts (see check: tasks below)
+#
+# Installation: https://taskfile.dev/installation/
+#   macOS:   brew install go-task
+#   Linux:   sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b ~/.local/bin
+#
+# Usage:
+#   task --list              # Show all available tasks
+#   task dev:start           # Start Docker environment
+#   task cli:run -- [args]   # Run CLI import command
+#   task check               # Run code quality checks (calls pre-commit/composer)
+
+version: '3'
+
+vars:
+  CLI_PATH: /var/www/localhost/htdocs/openemr/oce-cli-import-codes
+  OPENEMR_PATH: /var/www/localhost/htdocs/openemr
+  DB_USER: root
+  DB_PASS: root
+  DB_NAME: openemr
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+    - task --list
+
+  # === Docker Environment ===
+
+  dev:start:
+    desc: Start Docker development environment
+    cmds:
+    - docker compose up -d --wait
+    - echo "OpenEMR started. Get port with 'task dev:port'"
+
+  dev:stop:
+    desc: Stop Docker environment (keeps data)
+    cmds:
+    - docker compose down
+    - echo "Docker environment stopped"
+
+  dev:restart:
+    desc: Restart Docker environment
+    cmds:
+    - docker compose restart
+    - echo "Docker environment restarted"
+
+  dev:reset:
+    desc: Stop and remove all data (fresh start)
+    prompt: This will delete ALL data. Continue?
+    cmds:
+    - docker compose down -v
+    - echo "All data removed. Run 'task dev:start' to start fresh"
+
+  dev:purge:
+    desc: Stop and remove all containers, volumes, and orphans
+    prompt: This will DELETE all Docker containers, volumes, and orphans. Continue?
+    cmds:
+    - docker compose down -v --remove-orphans
+    - echo "Docker environment purged"
+
+  dev:has-volumes:
+    desc: Check if Docker volumes exist (returns 0 if exist, 1 if not)
+    internal: true
+    cmds:
+    - test -n "$(docker volume ls -q --filter name=oce-cli-import-codes)"
+
+  dev:logs:
+    desc: View OpenEMR logs (follow mode)
+    cmds:
+    - docker compose logs -f openemr
+
+  dev:logs:errors:
+    desc: View OpenEMR error logs only
+    cmds:
+    - docker compose logs -f openemr | grep -i error
+
+  dev:port:
+    desc: Get assigned port for OpenEMR
+    cmds:
+    - echo "OpenEMR HTTP port:"
+    - docker compose port openemr 80
+    - echo ""
+    - echo "Access OpenEMR at http://localhost:[PORT]"
+    - echo "Login - admin / pass"
+
+  dev:browse:
+    desc: Open OpenEMR in your default browser
+    cmds:
+    - |
+      HTTPS_PORT=$(docker compose port openemr 443 | cut -d: -f2)
+      if [ -z "$HTTPS_PORT" ]; then
+        echo "Could not detect HTTPS port. Is Docker running?"
+        exit 1
+      fi
+      URL="https://localhost:$HTTPS_PORT"
+      echo "Opening OpenEMR at $URL"
+      echo "Login credentials: admin / pass"
+      if command -v open > /dev/null 2>&1; then
+        open "$URL"
+      elif command -v xdg-open > /dev/null 2>&1; then
+        xdg-open "$URL"
+      else
+        echo "Could not find 'open' or 'xdg-open' command"
+        echo "Please open this URL manually: $URL"
+      fi
+
+  dev:shell:
+    desc: Access OpenEMR container shell
+    cmds:
+    - docker compose exec openemr bash
+
+  dev:status:
+    desc: Check Docker container status
+    cmds:
+    - docker compose ps
+
+  # === CLI Tool Execution ===
+
+  cli:run:
+    desc: 'Run the import codes CLI (usage: task cli:run -- /path/to/file.zip)'
+    cmds:
+    - docker compose exec openemr php {{.CLI_PATH}}/bin/oce-import-codes import --openemr-path={{.OPENEMR_PATH}} {{.CLI_ARGS}}
+
+  cli:help:
+    desc: Show CLI help
+    cmds:
+    - docker compose exec openemr php {{.CLI_PATH}}/bin/oce-import-codes import --help
+
+  cli:dry-run:
+    desc: 'Run CLI in dry-run mode (usage: task cli:dry-run -- /path/to/file.zip)'
+    cmds:
+    - docker compose exec openemr php {{.CLI_PATH}}/bin/oce-import-codes import --openemr-path={{.OPENEMR_PATH}} --dry-run {{.CLI_ARGS}}
+
+  # === Database Access ===
+
+  db:shell:
+    desc: Access MariaDB database shell
+    cmds:
+    - docker compose exec mysql mariadb -u{{.DB_USER}} -p{{.DB_PASS}} {{.DB_NAME}}
+
+  db:export:
+    desc: Export database to backup.sql
+    cmds:
+    - docker compose exec mysql mariadb-dump -u{{.DB_USER}} -p{{.DB_PASS}} {{.DB_NAME}} > backup.sql
+    - echo "Database exported to backup.sql"
+
+  db:import:
+    desc: Import database from backup.sql
+    prompt: This will overwrite the current database. Continue?
+    cmds:
+    - docker compose exec -T mysql mariadb -u{{.DB_USER}} -p{{.DB_PASS}} {{.DB_NAME}} < backup.sql
+    - echo "Database imported from backup.sql"
+
+  db:query:
+    desc: 'Run a SQL query (usage: task db:query -- "SELECT * FROM users LIMIT 5")'
+    cmds:
+    - docker compose exec mysql mariadb -u{{.DB_USER}} -p{{.DB_PASS}} -e "{{.CLI_ARGS}}" {{.DB_NAME}} 2>&1 | grep -v "Using a password"
+
+  db:show-codes:
+    desc: Show loaded code types and counts
+    cmds:
+    - |
+      docker compose exec mysql mariadb -u{{.DB_USER}} -p{{.DB_PASS}} -e "
+      SELECT 'RXNORM' as code_type, COUNT(*) as count FROM rxnconso
+      UNION ALL SELECT 'SNOMED', COUNT(*) FROM sct_descriptions
+      UNION ALL SELECT 'ICD10', COUNT(*) FROM icd10_dx_order_code
+      UNION ALL SELECT 'ICD9', COUNT(*) FROM icd9_dx_code
+      UNION ALL SELECT 'CQM_VALUESET', COUNT(*) FROM valueset
+      " {{.DB_NAME}} 2>&1 | grep -v "Using a password"
+
+  db:tracking:
+    desc: Show standardized tables tracking info
+    cmds:
+    - docker compose exec mysql mariadb -u{{.DB_USER}} -p{{.DB_PASS}} -e "SELECT * FROM standardized_tables_track ORDER BY imported_date DESC" {{.DB_NAME}} 2>&1 | grep -v "Using a password"
+
+  # === Code Quality (delegates to Composer scripts) ===
+  # These tasks call Composer scripts directly on the host (no Docker needed).
+  # You can also run `composer phpcs`, `composer phpstan`, etc. directly.
+
+  check:
+    desc: Run all code quality checks (calls pre-commit run -a)
+    cmds:
+    - pre-commit run -a
+
+  check:phpcs:
+    desc: Run PHP CodeSniffer (calls composer phpcs)
+    cmds:
+    - composer phpcs
+
+  check:phpstan:
+    desc: Run PHPStan (calls composer phpstan)
+    cmds:
+    - composer phpstan
+
+  check:fix:
+    desc: Auto-fix code style (calls composer phpcbf)
+    cmds:
+    - composer phpcbf
+
+  # === Testing ===
+
+  test:
+    desc: Run PHPUnit tests
+    cmds:
+    - composer test
+
+  test:coverage:
+    desc: Run PHPUnit with coverage report
+    cmds:
+    - docker compose run --rm phpunit-coverage
+
+  test:docker:
+    desc: Run PHPUnit tests in Docker
+    cmds:
+    - docker compose run --rm phpunit
+
+  # === Development Helpers ===
+
+  composer:install:
+    desc: Install composer dependencies
+    cmds:
+    - composer install
+    - echo "Composer dependencies installed"
+
+  composer:update:
+    desc: Update composer dependencies
+    cmds:
+    - composer update
+    - echo "Composer dependencies updated"
+
+  openemr:prebuild:
+    desc: Pre-build OpenEMR dependencies (speeds up first Docker start)
+    cmds:
+    - echo "Building OpenEMR dependencies..."
+    - cd vendor/openemr/openemr && composer install --no-dev
+    - cd vendor/openemr/openemr && npm install --legacy-peer-deps
+    - cd vendor/openemr/openemr && npm run build
+    - echo "OpenEMR dependencies built"
+
+  git:clean:
+    desc: Run git clean (remove untracked files, preserves .local/)
+    prompt: This will delete untracked files (except .local/). Continue?
+    cmds:
+    - git clean -fd -e .local
+    - echo "Untracked files removed (preserved .local/)"
+
+  vendor:clean:
+    desc: Remove vendor directory (forces complete reinstall of dependencies)
+    prompt: This will DELETE the entire vendor directory. Continue?
+    preconditions:
+    - sh: test -z "$(docker volume ls -q --filter name=oce-cli-import-codes 2>/dev/null)"
+      msg: |
+        Docker volumes still exist. You must run 'task dev:purge' first.
+
+        Reason: OpenEMR stores crypto keys in both the database (volume) and filesystem (vendor).
+        Removing vendor without removing volumes will break encryption and make the database unusable.
+
+        Run: task workflow:nuke (to remove both) or task dev:purge (then task vendor:clean)
+    cmds:
+    - git clean -ffdx vendor/
+    - echo "Vendor directory removed"
+
+  # === Quick Workflows ===
+
+  setup:
+    desc: Complete setup (install deps, prebuild OpenEMR, start Docker)
+    cmds:
+    - task: composer:install
+    - task: openemr:prebuild
+    - task: dev:start
+    - task: dev:port
+
+  workflow:reset:
+    desc: Complete reset (stop, clean data, restart)
+    cmds:
+    - task: dev:reset
+    - task: dev:start
+    - echo ""
+    - echo "Environment reset complete"
+    - task: dev:port
+
+  workflow:nuke:
+    desc: Nuclear reset (removes vendor + database volumes, forces complete reinstall)
+    cmds:
+    - task: dev:purge
+    - task: vendor:clean
+    - echo "Complete reset done. Vendor removed, Docker volumes deleted."
+    - echo "   Run 'task setup' to rebuild from scratch."

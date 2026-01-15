@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="OpenEMR CLI Import Codes">
+    <description>PHP CodeSniffer configuration for OpenEMR CLI Import Codes</description>
+
+    <!-- Files to check -->
+    <file>src</file>
+    <file>bin</file>
+
+    <!-- Exclude patterns -->
+    <exclude-pattern>*/vendor/*</exclude-pattern>
+
+    <!-- Show progress -->
+    <arg value="p"/>
+    <!-- Show colors in output -->
+    <arg name="colors"/>
+    <!-- Run in parallel -->
+    <arg name="parallel" value="75"/>
+    <!-- Show sniff codes -->
+    <arg value="s"/>
+
+    <!-- Use PSR-12 as base standard -->
+    <rule ref="PSR12"/>
+
+    <!-- PHP version compatibility -->
+    <config name="testVersion" value="8.2-"/>
+
+    <!-- Additional rules -->
+    <rule ref="Generic.Arrays.DisallowLongArraySyntax"/>
+    <rule ref="Generic.CodeAnalysis.UnusedFunctionParameter"/>
+    <rule ref="Generic.Commenting.Todo"/>
+    <rule ref="Generic.Files.LineLength">
+        <properties>
+            <property name="lineLimit" value="120"/>
+            <property name="absoluteLineLimit" value="150"/>
+        </properties>
+    </rule>
+    <rule ref="Generic.PHP.DeprecatedFunctions"/>
+    <rule ref="Generic.PHP.ForbiddenFunctions"/>
+    <rule ref="Squiz.WhiteSpace.SuperfluousWhitespace">
+        <properties>
+            <property name="ignoreBlankLines" value="false"/>
+        </properties>
+    </rule>
+</ruleset>
