@@ -19,7 +19,6 @@ use OpenCoreEMR\CLI\ImportCodes\Exception\DatabaseLockException;
 
 class CodeImporter
 {
-    private ?string $customTempDir = null;
     private ?string $currentLockName = null;
     private int $lockRetryAttempts = 10;
     private int $lockRetryDelaySeconds = 30;
@@ -33,7 +32,6 @@ class CodeImporter
         if (!is_dir($tempDir) || !is_writable($tempDir)) {
             throw new FileSystemException("Temporary directory is not writable: $tempDir");
         }
-        $this->customTempDir = $tempDir;
     }
 
     /**
@@ -43,22 +41,6 @@ class CodeImporter
     {
         $this->lockRetryAttempts = max(1, $attempts);
         $this->lockRetryDelaySeconds = max(0, $delaySeconds);
-    }
-
-    /**
-     * Get temporary directory to use
-     */
-    private function getTempDir(): string
-    {
-        if ($this->customTempDir) {
-            return $this->customTempDir;
-        }
-
-        if (isset($GLOBALS['temporary_files_dir'])) {
-            return $GLOBALS['temporary_files_dir'];
-        }
-
-        return sys_get_temp_dir();
     }
 
     /**
@@ -109,31 +91,14 @@ class CodeImporter
                 return;
             }
 
-            switch ($codeType) {
-                case 'RXNORM':
-                    $this->importRxnorm($isWindows);
-                    break;
-
-                case 'SNOMED':
-                    $this->importSnomed($usExtension);
-                    break;
-
-                case 'SNOMED_RF2':
-                    $this->importSnomedRF2();
-                    break;
-
-                case 'ICD9':
-                case 'ICD10':
-                    $this->importIcd($codeType);
-                    break;
-
-                case 'CQM_VALUESET':
-                    $this->importValueset($codeType);
-                    break;
-
-                default:
-                    throw new CodeImportException("Unsupported code type: $codeType");
-            }
+            match ($codeType) {
+                'RXNORM' => $this->importRxnorm($isWindows),
+                'SNOMED' => $this->importSnomed($usExtension),
+                'SNOMED_RF2' => $this->importSnomedRF2(),
+                'ICD9', 'ICD10' => $this->importIcd($codeType),
+                'CQM_VALUESET' => $this->importValueset($codeType),
+                default => throw new CodeImportException("Unsupported code type: $codeType"),
+            };
         } finally {
             // Always release the lock, even if import fails
             $this->releaseLock();
@@ -149,11 +114,11 @@ class CodeImporter
 
         // RF2 patterns from OpenEMR's list_staged.php
         $rf2Patterns = [
-            "/SnomedCT_InternationalRF2_PRODUCTION_([0-9]{8})[0-9a-zA-Z]{8}.zip/",
-            "/SnomedCT_ManagedServiceIE_PRODUCTION_IE1000220_([0-9]{8})[0-9a-zA-Z]{8}.zip/",
-            "/SnomedCT_USEditionRF2_PRODUCTION_([0-9]{8})[0-9a-zA-Z]{8}.zip/",
-            "/SnomedCT_ManagedServiceUS_PRODUCTION_US[0-9]{7}_([0-9a-zA-Z]{8})T[0-9Z]{7}.zip/",
-            "/SnomedCT_SpanishRelease-es_PRODUCTION_([0-9]{8})[0-9a-zA-Z]{8}.zip/",
+            "/SnomedCT_InternationalRF2_PRODUCTION_(\\d{8})[0-9a-zA-Z]{8}.zip/",
+            "/SnomedCT_ManagedServiceIE_PRODUCTION_IE1000220_(\\d{8})[0-9a-zA-Z]{8}.zip/",
+            "/SnomedCT_USEditionRF2_PRODUCTION_(\\d{8})[0-9a-zA-Z]{8}.zip/",
+            "/SnomedCT_ManagedServiceUS_PRODUCTION_US\\d{7}_([0-9a-zA-Z]{8})T[0-9Z]{7}.zip/",
+            "/SnomedCT_SpanishRelease-es_PRODUCTION_(\\d{8})[0-9a-zA-Z]{8}.zip/",
         ];
 
         foreach ($rf2Patterns as $pattern) {
@@ -246,7 +211,7 @@ class CodeImporter
 
         $result = sqlQuery(
             "SELECT COUNT(*) as count FROM `standardized_tables_track` WHERE `name` = ? AND `revision_date` = ? AND `revision_version` = ? AND `file_checksum` = ?",
-            array($codeType, $revisionDate, $version, $fileChecksum)
+            [$codeType, $revisionDate, $version, $fileChecksum]
         );
 
         return $result && $result['count'] > 0;
@@ -271,7 +236,7 @@ class CodeImporter
             );
 
             return $result && $result['count'] > 0;
-        } catch (\Exception $e) {
+        } catch (\Exception) {
             // If query fails, assume not loaded to be safe
             return false;
         }
@@ -334,7 +299,7 @@ class CodeImporter
             }
 
             // Lock is held by another process ($result['lock_result'] == 0)
-            if ($this->lockRetryDelaySeconds == 0) {
+            if ($this->lockRetryDelaySeconds === 0) {
                 // No retry mode - fail immediately
                 $this->currentLockName = null;
                 throw new DatabaseLockException("Failed to acquire database lock for {$codeType} import - another import is in progress and no-wait mode is enabled.");
@@ -350,7 +315,7 @@ class CodeImporter
                 sleep($delay);
 
                 // Exponential backoff with jitter (cap at 5 minutes)
-                $delay = min($delay * 2, 300) + rand(1, min(10, $delay));
+                $delay = min($delay * 2, 300) + random_int(1, min(10, $delay));
                 $attempt++;
             } else {
                 // Final attempt failed
@@ -366,7 +331,7 @@ class CodeImporter
      */
     private function calculateTotalWaitTime(): int
     {
-        if ($this->lockRetryDelaySeconds == 0) {
+        if ($this->lockRetryDelaySeconds === 0) {
             return 0;
         }
 
@@ -427,7 +392,7 @@ class CodeImporter
             'component' => 'code-importer'
         ];
 
-        if (!empty($data)) {
+        if ($data !== []) {
             $logEntry = array_merge($logEntry, $data);
         }
 

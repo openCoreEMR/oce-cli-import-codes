@@ -28,18 +28,11 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 class ImportCodesCommand extends Command
 {
     private const SUPPORTED_TYPES = ['RXNORM', 'SNOMED', 'SNOMED_RF2', 'ICD9', 'ICD10', 'CQM_VALUESET'];
-
-    private CodeImporter $importer;
-    private OpenEMRConnector $connector;
-    private MetadataDetector $detector;
     private OutputInterface $output;
 
-    public function __construct(?CodeImporter $importer = null, ?OpenEMRConnector $connector = null, ?MetadataDetector $detector = null)
+    public function __construct(private readonly ?CodeImporter $importer = new CodeImporter(), private readonly ?OpenEMRConnector $connector = new OpenEMRConnector(), private readonly ?MetadataDetector $detector = new MetadataDetector())
     {
         parent::__construct();
-        $this->importer = $importer ?? new CodeImporter();
-        $this->connector = $connector ?? new OpenEMRConnector();
-        $this->detector = $detector ?? new MetadataDetector();
     }
 
     protected function configure()
@@ -99,16 +92,16 @@ class ImportCodesCommand extends Command
         // Auto-detect code type, or use override
         $codeTypeOverride = $input->getOption('code-type');
         if ($codeTypeOverride) {
-            $codeType = strtoupper($codeTypeOverride);
+            $codeType = strtoupper((string) $codeTypeOverride);
             if (!in_array($codeType, self::SUPPORTED_TYPES)) {
                 $this->logJson('error', 'Unsupported code type', ['code_type' => $codeType, 'supported_types' => self::SUPPORTED_TYPES]);
                 return Command::FAILURE;
             }
         } else {
             $codeType = $this->detector->detectCodeType($filePath);
-            if (empty($codeType)) {
+            if ($codeType === '' || $codeType === '0') {
                 $this->logJson('error', 'Could not auto-detect code type from filename', [
-                    'filename' => basename($filePath),
+                    'filename' => basename((string) $filePath),
                     'supported_patterns' => $this->detector->getSupportedPatterns()
                 ]);
                 return Command::FAILURE;
@@ -116,7 +109,7 @@ class ImportCodesCommand extends Command
         }
 
         if (!$this->detector->isSupported($filePath)) {
-            $this->logJson('error', 'Unsupported file format', ['filename' => basename($filePath)]);
+            $this->logJson('error', 'Unsupported file format', ['filename' => basename((string) $filePath)]);
             return Command::FAILURE;
         }
 
@@ -231,9 +224,9 @@ class ImportCodesCommand extends Command
                     }
                 } else {
                     $missing = array_filter([
-                        !$metadata['revision_date'] ? 'revision_date' : null,
-                        !$metadata['version'] ? 'version' : null,
-                        !$metadata['supported'] ? 'supported format' : null
+                        $metadata['revision_date'] ? null : 'revision_date',
+                        $metadata['version'] ? null : 'version',
+                        $metadata['supported'] ? null : 'supported format'
                     ]);
                     $this->logJson('warning', 'Metadata incomplete - tracking table not updated', ['missing' => $missing]);
                 }
@@ -248,7 +241,6 @@ class ImportCodesCommand extends Command
 
             $this->logJson('success', 'Import completed successfully');
             return Command::SUCCESS;
-
         } catch (\Exception $e) {
             $this->logJson('error', 'Import failed', ['error' => $e->getMessage()]);
 
@@ -270,7 +262,7 @@ class ImportCodesCommand extends Command
                 $this->importer->import($codeType, $isWindows, $usExtension, $filePath);
             } catch (\Exception $e) {
                 // Check if this is a lock acquisition failure
-                if (strpos($e->getMessage(), 'Failed to acquire database lock') !== false) {
+                if (str_contains($e->getMessage(), 'Failed to acquire database lock')) {
                     throw new CodeImportException("Import failed: " . $e->getMessage());
                 }
                 // Re-throw other exceptions as-is
@@ -287,13 +279,8 @@ class ImportCodesCommand extends Command
         if (str_starts_with($path, '/')) {
             return true;
         }
-
         // Windows absolute path starts with drive letter (e.g., C:\)
-        if (preg_match('/^[a-zA-Z]:[\/\\\\]/', $path)) {
-            return true;
-        }
-
-        return false;
+        return (bool) preg_match('/^[a-zA-Z]:[\/\\\\]/', $path);
     }
 
     /**
@@ -309,7 +296,7 @@ class ImportCodesCommand extends Command
             'component' => 'oce-import-codes'
         ];
 
-        if (!empty($data)) {
+        if ($data !== []) {
             $logEntry = array_merge($logEntry, $data);
         }
 
