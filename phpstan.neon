@@ -1,0 +1,30 @@
+parameters:
+    level: 9
+    paths:
+        - src
+        - bin
+
+    # PHP version
+    phpVersion: 80200
+
+    # Ignore errors in vendor
+    excludePaths:
+        - vendor
+
+    # Additional checks
+    checkMissingCallableSignature: true
+    checkUninitializedProperties: true
+    checkTooWideReturnTypesInProtectedAndPublicMethods: true
+
+    # Report always true conditions
+    reportAlwaysTrueInLastCondition: true
+
+    # Ignore errors
+    ignoreErrors:
+        # OpenEMR global functions not available for static analysis
+        - '#Function (xlt|xla|xlj|text|attr|sqlStatement|sqlQuery|sqlFetchArray) not found#'
+
+        # OpenEMR classes not available without full OpenEMR installation
+        # reportUnmatched: false allows CI to pass when OpenEMR IS installed
+        - message: '#OpenEMR#'
+          reportUnmatched: false

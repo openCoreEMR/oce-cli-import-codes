@@ -19,17 +19,25 @@ Thumbs.db
 # Temporary files
 /tmp/
 /temp/
+/.local/
 
 # Test coverage
 /coverage/
+/htmlcov/
 /.phpunit.result.cache
+/.phpunit.cache/
 
 # Environment
 .env
 .env.local
 .env.*.local
+.env.testing
+compose.override.yml
 
 # Build artifacts
 /build/
 /dist/
 *.swp
+
+# Database backups
+backup.sql
