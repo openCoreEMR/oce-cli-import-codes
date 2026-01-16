@@ -95,12 +95,15 @@ task dev:port
 ### Running the CLI
 
 ```bash
-# Copy a code file into the container and run
+# Files in .local/vocabs/ are accessible inside the container
+task cli:run -- /var/www/localhost/htdocs/openemr/oce-cli-import-codes/.local/vocabs/codes.zip
+
+# Or copy a file into the container first
 docker cp /local/path/to/RxNorm.zip $(docker compose ps -q openemr):/tmp/
 task cli:run -- /tmp/RxNorm.zip
 
 # Or run directly via docker compose exec
-docker compose exec openemr php /var/www/localhost/htdocs/openemr/oce-cli-import-codes/bin/oce-import-codes import /tmp/codes.zip
+docker compose exec openemr php /var/www/localhost/htdocs/openemr/oce-cli-import-codes/bin/oce-import-codes /tmp/codes.zip
 ```
 
 ## Code Quality
@@ -150,15 +153,59 @@ task db:query -- "SELECT * FROM standardized_tables_track"
 ## CLI Options
 
 ```
---openemr-path    Path to OpenEMR installation (default: /var/www/localhost/htdocs/openemr)
---site            OpenEMR site name (default: default)
---code-type       Override auto-detected code type
---dry-run         Test without database changes
---cleanup         Remove temp files after import
---force           Import even if same version already loaded
---lock-retry-attempts   Retry count for database lock (default: 10)
---lock-retry-delay      Initial retry delay in seconds (default: 30)
+--openemr-path        Path to OpenEMR installation (default: /var/www/localhost/htdocs/openemr)
+--site                OpenEMR site name (default: default)
+--code-type           Override auto-detected code type
+--dry-run             Test without database changes
+--cleanup/--no-cleanup  Clean staging directory after import (default: --cleanup)
+--force               Import even if same version already loaded
+--allow-unsupported   Required for files not in supported_external_dataloads table
+--lock-retry-attempts Retry count for database lock (default: 10)
+--lock-retry-delay    Initial retry delay in seconds (default: 30)
 ```
+
+### Staging Directory Cleanup
+
+By default, the CLI cleans the staging directory (`/tmp/{CODE_TYPE}/`) after each import. This prevents duplicate imports when running multiple times.
+
+- **Default behavior**: Staging directory is cleaned after successful import
+- **`--no-cleanup`**: Keep staging files for debugging (warning issued about duplicate risk)
+- **Startup warning**: If existing files are found in staging before import, a warning is logged
+
+To manually clean staging directories:
+
+```bash
+task db:clean-vocabs -- ICD10   # Clean specific vocab type
+task db:clean-vocabs            # Clean all vocab types
+```
+
+### Importing Unsupported Code Versions
+
+OpenEMR validates code files by checking the filename and MD5 checksum against the `supported_external_dataloads` table. This table ships with each OpenEMR release and only contains entries for code versions known at release time.
+
+**By default, the CLI will reject files not in this table.** To import newer codes (e.g., 2026 ICD codes on an OpenEMR version that only knows about 2025), use the `--allow-unsupported` flag:
+
+```bash
+task cli:run -- /path/to/icd10orderfiles.zip --allow-unsupported
+```
+
+**How it works:**
+
+1. Checks the `supported_external_dataloads` table for filename + checksum match
+2. If not found, fails with an error (unless `--allow-unsupported` is set)
+3. With `--allow-unsupported`, parses metadata from the filename instead
+4. Extracts the year from filename patterns and calculates the release date
+
+**Supported filename patterns:**
+
+| Pattern | Example | Detected As |
+|---------|---------|-------------|
+| `icd10OrderFiles{YEAR}` | `icd10OrderFiles2025_0.zip` | ICD10 CM, effective {YEAR-1}-10-01 |
+| `icd10cm_order_{YEAR}` | `icd10cm_order_2024.txt.zip` | ICD10 CM, effective {YEAR-1}-10-01 |
+| `*{YEAR}*ICD-10-PCS*` | `Zip File 3 2026 ICD-10-PCS Codes File.zip` | ICD10 PCS, effective {YEAR-1}-10-01 |
+| `icd10orderfiles.zip` | (no year) | ICD10 CM, uses current fiscal year |
+
+ICD codes become effective October 1st, so "2026 codes" have release date 2025-10-01.
 
 ## Troubleshooting
 

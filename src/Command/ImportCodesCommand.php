@@ -68,7 +68,12 @@ class ImportCodesCommand extends Command
             ->addOption('site', null, InputOption::VALUE_REQUIRED, 'Name of OpenEMR site', 'default')
             ->addOption('windows', 'w', InputOption::VALUE_NONE, 'Use Windows-specific processing (RXNORM only)')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Perform a dry run without making database changes')
-            ->addOption('cleanup', null, InputOption::VALUE_NONE, 'Clean up temporary files after import')
+            ->addOption(
+                'cleanup',
+                null,
+                InputOption::VALUE_NEGATABLE,
+                'Clean staging directory after import (default: true, use --no-cleanup to disable)'
+            )
             ->addOption('temp-dir', null, InputOption::VALUE_REQUIRED, 'Custom temporary directory path')
             ->addOption(
                 'force',
@@ -90,6 +95,12 @@ class ImportCodesCommand extends Command
                 'Delay between lock retries in seconds (default: 30, 0 for no retries)',
                 30
             )
+            ->addOption(
+                'allow-unsupported',
+                null,
+                InputOption::VALUE_NONE,
+                'Allow importing code files not in supported_external_dataloads table'
+            )
             ->addUsage('/path/to/RxNorm_full_01012024.zip --openemr-path=/var/www/openemr')
             ->addUsage('/path/to/SnomedCT_USEditionRF2_PRODUCTION_20240301T120000Z.zip')
             ->addUsage('/path/to/icd10cm_order_2024.txt.zip --cleanup');
@@ -109,8 +120,9 @@ class ImportCodesCommand extends Command
         $isWindows = $input->getOption('windows');
         /** @var bool $dryRun */
         $dryRun = $input->getOption('dry-run');
-        /** @var bool $cleanup */
-        $cleanup = $input->getOption('cleanup');
+        /** @var ?bool $cleanupOpt */
+        $cleanupOpt = $input->getOption('cleanup');
+        $cleanup = $cleanupOpt ?? true; // Default to true if not specified
         /** @var string|null $tempDir */
         $tempDir = $input->getOption('temp-dir');
         /** @var bool $force */
@@ -176,7 +188,9 @@ class ImportCodesCommand extends Command
         }
 
         // Auto-detect metadata from filename
-        $metadata = $this->detector->detectFromFile($filePath, $codeType);
+        /** @var bool $allowUnsupported */
+        $allowUnsupported = $input->getOption('allow-unsupported');
+        $metadata = $this->detector->detectFromFile($filePath, $codeType, $allowUnsupported);
         $usExtension = (bool) ($metadata['us_extension'] ?? false);
 
         // Log configuration with detected metadata
@@ -209,8 +223,16 @@ class ImportCodesCommand extends Command
             $this->logJson('warning', 'DRY RUN MODE - No database changes will be made');
         }
 
-        if (!$metadata['supported']) {
-            $this->logJson('warning', 'File metadata could not be fully detected - tracking may be incomplete');
+        if (!$metadata['from_database']) {
+            if (!$allowUnsupported) {
+                $this->logJson('error', 'File not in supported_external_dataloads table', [
+                    'filename' => basename($filePath),
+                    'code_type' => $codeType,
+                    'suggestion' => 'Use --allow-unsupported to bypass this check'
+                ]);
+                return Command::FAILURE;
+            }
+            $this->logJson('warning', 'File not in supported_external_dataloads - using filename-based metadata');
         }
 
         // Set custom temp directory if provided
@@ -247,6 +269,20 @@ class ImportCodesCommand extends Command
                     'suggestion' => 'Use --force flag to import anyway, or --dry-run to test without checking'
                 ]);
                 return Command::SUCCESS;
+            }
+        }
+
+        // Check for existing files in staging directory (potential for duplicates)
+        if (!$dryRun) {
+            $existingFiles = $this->importer->getStagingFiles($codeType);
+            if ($existingFiles !== []) {
+                $this->logJson('warning', 'Staging directory already contains files', [
+                    'staging_dir' => $codeType,
+                    'file_count' => count($existingFiles),
+                    'files' => array_slice($existingFiles, 0, 10), // Show first 10
+                    'risk' => 'These files may be imported along with your new file, causing duplicates',
+                    'suggestion' => 'Run "task db:clean-vocabs -- ' . $codeType . '" to clean staging first'
+                ]);
             }
         }
 
@@ -309,11 +345,16 @@ class ImportCodesCommand extends Command
                 }
             }
 
-            // Step 4: Cleanup
+            // Step 4: Cleanup (default behavior to prevent duplicate imports)
             if ($cleanup && !$dryRun) {
-                $this->logJson('info', 'Starting cleanup');
+                $this->logJson('info', 'Cleaning up staging directory');
                 $this->importer->cleanup($codeType);
-                $this->logJson('info', 'Temporary files cleaned up');
+                $this->logJson('info', 'Staging directory cleaned');
+            } elseif (!$cleanup && !$dryRun) {
+                $this->logJson(
+                    'warning',
+                    'Staging files kept (--no-cleanup). Clean before next import to avoid duplicates.'
+                );
             }
 
             $this->logJson('success', 'Import completed successfully');

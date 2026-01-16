@@ -20,10 +20,11 @@ class MetadataDetector
      *
      * @return array<string, mixed>
      */
-    public function detectFromFile(string $filePath, string $codeType): array
+    public function detectFromFile(string $filePath, string $codeType, bool $allowUnsupported = false): array
     {
         $result = [
             'supported' => false,
+            'from_database' => false,
             'code_type' => $codeType,
             'version' => '',
             'revision_date' => '',
@@ -33,15 +34,17 @@ class MetadataDetector
         ];
 
         // Run detection directly on the filename without temp file operations
-        $revisions = $this->runOpenEMRDetection($codeType, $filePath);
+        $revisions = $this->runOpenEMRDetection($codeType, $filePath, $allowUnsupported);
 
         if ($revisions !== []) {
             $latest = end($revisions); // Get most recent
             $result['supported'] = true;
-            $result['version'] = $latest['version'];
+            $result['from_database'] = !empty($latest['from_database']);
+            $version = is_string($latest['version']) ? $latest['version'] : '';
+            $result['version'] = $version;
             $result['revision_date'] = $latest['date'];
             $result['rf2'] = isset($latest['rf2']) && $latest['rf2'];
-            $result['us_extension'] = str_contains((string) $latest['version'], 'US');
+            $result['us_extension'] = str_contains($version, 'US');
         }
 
         return $result;
@@ -49,8 +52,10 @@ class MetadataDetector
 
     /**
      * Run OpenEMR's exact detection logic (extracted from list_staged.php)
+     *
+     * @return list<array<string, mixed>>
      */
-    private function runOpenEMRDetection(string $db, string $filePath): array
+    private function runOpenEMRDetection(string $db, string $filePath, bool $allowUnsupported = false): array
     {
         $revisions = [];
         $fileName = basename($filePath);
@@ -116,29 +121,120 @@ class MetadataDetector
                 $revisions[] = ['date' => $date_release, 'version' => $version, 'path' => $filePath];
             }
         } elseif (is_numeric(strpos($db, "ICD"))) {
-            // For ICD, use database lookup if available
-            if (function_exists('sqlQuery')) {
-                $qry_str = "SELECT `load_checksum`, `load_source`, `load_release_date` "
-                    . "FROM `supported_external_dataloads` "
-                    . "WHERE `load_type` = ? AND `load_filename` = ? AND `load_checksum` = ? "
-                    . "ORDER BY `load_release_date` DESC";
-                $file_checksum = md5_file($filePath);
-                $sqlReturn = sqlQuery($qry_str, [$db, $fileName, $file_checksum]);
+            $revisions = $this->detectIcdFromFile($db, $filePath, $allowUnsupported);
+        }
 
-                if (!empty($sqlReturn)) {
-                    $version = $sqlReturn['load_source'];
-                    $date_release = $sqlReturn['load_release_date'];
-                    $revisions[] = [
-                        'date' => $date_release,
-                        'version' => $version,
-                        'path' => $filePath,
-                        'checksum' => $file_checksum
-                    ];
-                }
+        return $revisions;
+    }
+
+    /**
+     * Detect ICD metadata from file, with optional fallback to filename parsing
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function detectIcdFromFile(string $db, string $filePath, bool $allowUnsupported): array
+    {
+        $revisions = [];
+        $fileName = basename($filePath);
+        $file_checksum = md5_file($filePath);
+
+        // First try database lookup if available
+        if (function_exists('sqlQuery')) {
+            $qry_str = "SELECT `load_checksum`, `load_source`, `load_release_date` "
+                . "FROM `supported_external_dataloads` "
+                . "WHERE `load_type` = ? AND `load_filename` = ? AND `load_checksum` = ? "
+                . "ORDER BY `load_release_date` DESC";
+            $sqlReturn = sqlQuery($qry_str, [$db, $fileName, $file_checksum]);
+
+            if (!empty($sqlReturn)) {
+                return [[
+                    'date' => $sqlReturn['load_release_date'],
+                    'version' => $sqlReturn['load_source'],
+                    'path' => $filePath,
+                    'checksum' => $file_checksum,
+                    'from_database' => true
+                ]];
+            }
+        }
+
+        // If allowUnsupported, fall back to filename-based detection
+        if ($allowUnsupported) {
+            $metadata = $this->parseIcdFilename($fileName);
+            if ($metadata !== null) {
+                $revisions[] = [
+                    'date' => $metadata['release_date'],
+                    'version' => $metadata['version'],
+                    'path' => $filePath,
+                    'checksum' => $file_checksum,
+                    'from_database' => false
+                ];
             }
         }
 
         return $revisions;
+    }
+
+    /**
+     * Parse ICD metadata from filename
+     *
+     * @return ?array{release_date: string, version: string, year: int}
+     */
+    private function parseIcdFilename(string $fileName): ?array
+    {
+        // Patterns for ICD filenames with year extraction
+        // phpcs:disable Generic.Files.LineLength.TooLong
+        $patterns = [
+            // icd10OrderFiles2025_0.zip -> year 2025, effective 2024-10-01
+            '/icd10OrderFiles(\d{4})/' => 'ICD10 CM',
+            // icd10cm_order_2024.txt.zip -> year 2024, effective 2023-10-01
+            '/icd10cm_order_(\d{4})/' => 'ICD10 CM',
+            // Zip File 3 2026 ICD-10-PCS Codes File.zip -> year 2026, effective 2025-10-01
+            '/Zip File \d+ (\d{4}) ICD-10-PCS/i' => 'ICD10 PCS',
+            // zip-file-3-2026-icd-10-pcs-codes-file.zip -> year 2026, effective 2025-10-01
+            '/zip-file-\d+-(\d{4})-icd-10-pcs/i' => 'ICD10 PCS',
+            // icd9cm_order_*.zip patterns
+            '/icd9cm.*(\d{4})/' => 'ICD9 CM',
+            '/ICD-9-CM-v(\d+)/' => 'ICD9 CM',
+        ];
+        // phpcs:enable
+
+        foreach ($patterns as $pattern => $version) {
+            if (preg_match($pattern, $fileName, $matches)) {
+                $year = (int) $matches[1];
+
+                // ICD codes are effective October 1 of the previous year
+                // e.g., "2026 codes" are effective 2025-10-01
+                $effectiveYear = $year - 1;
+                $releaseDate = sprintf('%d-10-01', $effectiveYear);
+
+                return [
+                    'release_date' => $releaseDate,
+                    'version' => $version,
+                    'year' => $year
+                ];
+            }
+        }
+
+        // Handle generic icd10orderfiles.zip without year - use current fiscal year
+        if (preg_match('/icd10orderfiles\.zip$/i', $fileName)) {
+            // ICD fiscal year starts October 1
+            // If we're before October, we're in the previous fiscal year
+            $now = new \DateTime();
+            $month = (int) $now->format('n');
+            $year = (int) $now->format('Y');
+
+            // Fiscal year: Oct 2025 - Sep 2026 = FY 2026
+            $fiscalYear = $month >= 10 ? $year + 1 : $year;
+            $effectiveYear = $fiscalYear - 1;
+
+            return [
+                'release_date' => sprintf('%d-10-01', $effectiveYear),
+                'version' => 'ICD10 CM',
+                'year' => $fiscalYear
+            ];
+        }
+
+        return null;
     }
 
     /**
