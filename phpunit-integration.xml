@@ -1,17 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PHPUnit configuration for integration tests.
+
+  Integration tests run against a live OpenEMR environment and may trigger
+  warnings from OpenEMR internals (e.g., missing $_SERVER keys in CLI context).
+  This config is less strict than the main phpunit.xml to accommodate these.
+-->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
          bootstrap="vendor/autoload.php"
          colors="true"
          cacheDirectory=".phpunit.cache"
          executionOrder="depends,defects"
-         beStrictAboutOutputDuringTests="true"
-         failOnRisky="true"
-         failOnWarning="true">
+         beStrictAboutOutputDuringTests="false"
+         failOnRisky="false"
+         failOnWarning="false">
     <testsuites>
-        <testsuite name="unit">
-            <directory>tests/Unit</directory>
-        </testsuite>
         <testsuite name="integration">
             <directory>tests/Integration</directory>
         </testsuite>
@@ -19,13 +23,6 @@
             <directory>tests/E2E</directory>
         </testsuite>
     </testsuites>
-
-    <groups>
-        <exclude>
-            <group>integration</group>
-            <group>e2e</group>
-        </exclude>
-    </groups>
 
     <source>
         <include>

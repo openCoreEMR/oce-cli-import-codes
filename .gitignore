@@ -27,6 +27,10 @@ Thumbs.db
 /.phpunit.result.cache
 /.phpunit.cache/
 
+# Vocabulary test configuration and files (may contain licensed data)
+tests/Fixtures/vocabs.php
+tests/Fixtures/*.vocab.zip
+
 # Environment
 .env
 .env.local

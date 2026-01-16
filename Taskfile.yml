@@ -212,9 +212,31 @@ tasks:
   # === Testing ===
 
   test:
-    desc: Run PHPUnit tests
+    desc: Run PHPUnit tests (unit tests only, runs locally)
     cmds:
-    - composer test
+    - composer test:unit
+
+  test:unit:
+    desc: Run unit tests only (no Docker required)
+    cmds:
+    - composer test:unit
+
+  test:integration:
+    desc: Run integration tests inside Docker (requires dev:start)
+    cmds:
+    - docker compose exec -w {{.CLI_PATH}} openemr php vendor/bin/phpunit -c phpunit-integration.xml --testsuite integration --testdox
+
+  test:e2e:
+    desc: Run e2e tests that load vocabs and verify DB state (requires dev:start)
+    cmds:
+    - docker compose exec -w {{.CLI_PATH}} openemr php vendor/bin/phpunit -c phpunit-integration.xml --testsuite e2e --testdox
+
+  test:all:
+    desc: Run all tests (unit locally, integration and e2e in Docker)
+    cmds:
+    - task: test:unit
+    - task: test:integration
+    - task: test:e2e
 
   test:coverage:
     desc: Run PHPUnit with coverage report
