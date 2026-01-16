@@ -1,0 +1,56 @@
+<?php
+
+/**
+ * Vocabulary file configuration for e2e testing.
+ *
+ * Copy this file to vocabs.php and configure paths to your vocabulary files.
+ * The vocabs.php file is gitignored and will not be committed.
+ *
+ * Each vocabulary type can have multiple versions for testing upgrades.
+ * Tests will run for each configured file.
+ *
+ * @package   OpenCoreEMR\CLI\ImportCodes\Tests
+ * @link      https://opencoreemr.com
+ * @author    Michael A. Smith <michael@opencoreemr.com>
+ * @copyright Copyright (c) 2026 OpenCoreEMR Inc
+ * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
+ */
+
+return [
+    // RXNORM vocabulary files
+    // Download from: https://www.nlm.nih.gov/research/umls/rxnorm/docs/rxnormfiles.html
+    'RXNORM' => [
+        // 'previous' => '/path/to/RxNorm_full_10072023.zip',
+        // 'current'  => '/path/to/RxNorm_full_01082024.zip',
+        // 'next'     => '/path/to/RxNorm_full_04012024.zip',
+    ],
+
+    // SNOMED CT vocabulary files
+    // Download from: https://www.nlm.nih.gov/healthit/snomedct/us_edition.html
+    'SNOMED' => [
+        // 'previous' => '/path/to/SnomedCT_USEditionRF2_PRODUCTION_20230901T120000Z.zip',
+        // 'current'  => '/path/to/SnomedCT_USEditionRF2_PRODUCTION_20240301T120000Z.zip',
+        // 'next'     => '/path/to/SnomedCT_USEditionRF2_PRODUCTION_20240901T120000Z.zip',
+    ],
+
+    // ICD-10 vocabulary files
+    // Download from: https://www.cms.gov/medicare/coding/icd10
+    'ICD10' => [
+        // 'previous' => '/path/to/icd10cm_order_2023.txt.zip',
+        // 'current'  => '/path/to/icd10cm_order_2024.txt.zip',
+        // 'next'     => '/path/to/icd10cm_order_2025.txt.zip',
+    ],
+
+    // ICD-9 vocabulary files (legacy)
+    'ICD9' => [
+        // 'current' => '/path/to/icd9cm_order_2014.zip',
+    ],
+
+    // CQM ValueSet vocabulary files
+    // Download from: https://vsac.nlm.nih.gov/
+    'CQM_VALUESET' => [
+        // 'previous' => '/path/to/ec_only_cms_20230101.xml.zip',
+        // 'current'  => '/path/to/ec_only_cms_20240101.xml.zip',
+        // 'next'     => '/path/to/ec_only_cms_20250101.xml.zip',
+    ],
+];
