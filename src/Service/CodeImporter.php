@@ -274,6 +274,38 @@ class CodeImporter
     }
 
     /**
+     * Check if staging directory exists and contains files
+     *
+     * @return list<string> List of files found in staging directory
+     */
+    public function getStagingFiles(string $type): array
+    {
+        if (!isset($GLOBALS['temporary_files_dir']) || !is_string($GLOBALS['temporary_files_dir'])) {
+            return [];
+        }
+
+        $stagingDir = $GLOBALS['temporary_files_dir'] . '/' . $type;
+        if (!is_dir($stagingDir)) {
+            return [];
+        }
+
+        $files = [];
+        $handle = opendir($stagingDir);
+        if ($handle === false) {
+            return [];
+        }
+
+        while (($file = readdir($handle)) !== false) {
+            if ($file !== '.' && $file !== '..') {
+                $files[] = $file;
+            }
+        }
+        closedir($handle);
+
+        return $files;
+    }
+
+    /**
      * Acquire a database lock for the given code type to prevent concurrent imports
      */
     private function acquireLock(string $codeType): void

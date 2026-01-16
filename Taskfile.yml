@@ -131,17 +131,17 @@ tasks:
   cli:run:
     desc: 'Run the import codes CLI (usage: task cli:run -- /path/to/file.zip)'
     cmds:
-    - docker compose exec openemr php {{.CLI_PATH}}/bin/oce-import-codes import --openemr-path={{.OPENEMR_PATH}} {{.CLI_ARGS}}
+    - docker compose exec openemr php {{.CLI_PATH}}/bin/oce-import-codes --openemr-path={{.OPENEMR_PATH}} {{.CLI_ARGS}}
 
   cli:help:
     desc: Show CLI help
     cmds:
-    - docker compose exec openemr php {{.CLI_PATH}}/bin/oce-import-codes import --help
+    - docker compose exec openemr php {{.CLI_PATH}}/bin/oce-import-codes --help
 
   cli:dry-run:
     desc: 'Run CLI in dry-run mode (usage: task cli:dry-run -- /path/to/file.zip)'
     cmds:
-    - docker compose exec openemr php {{.CLI_PATH}}/bin/oce-import-codes import --openemr-path={{.OPENEMR_PATH}} --dry-run {{.CLI_ARGS}}
+    - docker compose exec openemr php {{.CLI_PATH}}/bin/oce-import-codes --openemr-path={{.OPENEMR_PATH}} --dry-run {{.CLI_ARGS}}
 
   # === Database Access ===
 
@@ -172,18 +172,78 @@ tasks:
     desc: Show loaded code types and counts
     cmds:
     - |
-      docker compose exec mysql mariadb -u{{.DB_USER}} -p{{.DB_PASS}} -e "
-      SELECT 'RXNORM' as code_type, COUNT(*) as count FROM rxnconso
-      UNION ALL SELECT 'SNOMED', COUNT(*) FROM sct_descriptions
-      UNION ALL SELECT 'ICD10', COUNT(*) FROM icd10_dx_order_code
-      UNION ALL SELECT 'ICD9', COUNT(*) FROM icd9_dx_code
-      UNION ALL SELECT 'CQM_VALUESET', COUNT(*) FROM valueset
-      " {{.DB_NAME}} 2>&1 | grep -v "Using a password"
+      echo "code_type	count"
+      echo "---------	-----"
+      for pair in "RXNORM:rxnconso" "SNOMED:sct_descriptions" "ICD10:icd10_dx_order_code" "ICD9:icd9_dx_code" "CQM_VALUESET:valueset"; do
+        name="${pair%%:*}"
+        table="${pair##*:}"
+        count=$(docker compose exec -T mysql mariadb -u{{.DB_USER}} -p{{.DB_PASS}} -N -e "SELECT COUNT(*) FROM $table" {{.DB_NAME}} 2>/dev/null | grep -v "Using a password" || echo "0")
+        echo "$name	$count"
+      done
 
   db:tracking:
     desc: Show standardized tables tracking info
     cmds:
-    - docker compose exec mysql mariadb -u{{.DB_USER}} -p{{.DB_PASS}} -e "SELECT * FROM standardized_tables_track ORDER BY imported_date DESC" {{.DB_NAME}} 2>&1 | grep -v "Using a password"
+    - |
+      result=$(docker compose exec -T mysql mariadb -u{{.DB_USER}} -p{{.DB_PASS}} -e "SELECT * FROM standardized_tables_track ORDER BY imported_date DESC" {{.DB_NAME}} 2>&1 | { grep -v "Using a password" || true; })
+      if [ -z "$result" ]; then
+        echo "No vocabularies tracked yet."
+      else
+        echo "$result"
+      fi
+
+  db:clean-vocabs:
+    desc: 'Clean vocabulary tables and staging dirs (usage: task db:clean-vocabs -- ICD10 or task db:clean-vocabs for all)'
+    cmds:
+    - |
+      VOCAB="{{.CLI_ARGS}}"
+      # OpenEMR's temporary_files_dir is /tmp by default (check globals table)
+      TEMP_DIR="/tmp"
+      truncate_tables() {
+        local tables="$1"
+        for t in $tables; do
+          docker compose exec -T mysql mariadb -u{{.DB_USER}} -p{{.DB_PASS}} -e "TRUNCATE TABLE $t" {{.DB_NAME}} 2>/dev/null || true
+        done
+      }
+      clean_tracking() {
+        local name="$1"
+        docker compose exec -T mysql mariadb -u{{.DB_USER}} -p{{.DB_PASS}} -e "DELETE FROM standardized_tables_track WHERE name = '$name'" {{.DB_NAME}} 2>/dev/null
+      }
+      clean_staging() {
+        local dir="$1"
+        docker compose exec -T openemr rm -rf "$TEMP_DIR/$dir" 2>/dev/null || true
+      }
+      if [ -z "$VOCAB" ] || [ "$VOCAB" = "RXNORM" ]; then
+        echo "Cleaning RXNORM..."
+        truncate_tables "rxnconso rxnrel rxnatomarchive rxncui rxnsat rxnsty"
+        clean_tracking "RXNORM"
+        clean_staging "RXNORM"
+      fi
+      if [ -z "$VOCAB" ] || [ "$VOCAB" = "SNOMED" ]; then
+        echo "Cleaning SNOMED..."
+        truncate_tables "sct_descriptions sct_concepts sct_relationships"
+        clean_tracking "SNOMED"
+        clean_staging "SNOMED"
+      fi
+      if [ -z "$VOCAB" ] || [ "$VOCAB" = "ICD10" ]; then
+        echo "Cleaning ICD10..."
+        truncate_tables "icd10_dx_order_code icd10_pcs_order_code icd10_gem_dx_10_9 icd10_gem_dx_9_10 icd10_gem_pcs_10_9 icd10_gem_pcs_9_10 icd10_reimbr_dx_9_10 icd10_reimbr_pcs_9_10"
+        clean_tracking "ICD10"
+        clean_staging "ICD10"
+      fi
+      if [ -z "$VOCAB" ] || [ "$VOCAB" = "ICD9" ]; then
+        echo "Cleaning ICD9..."
+        truncate_tables "icd9_dx_code icd9_dx_long_code icd9_sg_code icd9_sg_long_code"
+        clean_tracking "ICD9"
+        clean_staging "ICD9"
+      fi
+      if [ -z "$VOCAB" ] || [ "$VOCAB" = "CQM_VALUESET" ]; then
+        echo "Cleaning CQM_VALUESET..."
+        truncate_tables "valueset"
+        clean_tracking "CQM_VALUESET"
+        clean_staging "CQM_VALUESET"
+      fi
+      echo "Done."
 
   # === Code Quality (delegates to Composer scripts) ===
   # These tasks call Composer scripts directly on the host (no Docker needed).
