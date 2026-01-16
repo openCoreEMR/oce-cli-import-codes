@@ -136,9 +136,11 @@
         "phpcbf": "phpcbf",
         "phpcs": "phpcs",
         "phpstan": "phpstan --memory-limit=512M analyse",
-        "phpunit": "phpunit --testdox",
+        "phpunit": "vendor/bin/phpunit --testdox",
         "rector": "rector process --dry-run",
         "rector-fix": "rector process",
-        "test": "@phpunit"
+        "test": "@phpunit",
+        "test:unit": "vendor/bin/phpunit --testsuite unit --testdox",
+        "test:integration": "vendor/bin/phpunit -c phpunit-integration.xml --testdox"
     }
 }
