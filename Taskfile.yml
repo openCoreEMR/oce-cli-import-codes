@@ -224,13 +224,19 @@ tasks:
   test:integration:
     desc: Run integration tests inside Docker (requires dev:start)
     cmds:
-    - docker compose exec -w {{.CLI_PATH}} openemr php vendor/bin/phpunit -c phpunit-integration.xml --testdox
+    - docker compose exec -w {{.CLI_PATH}} openemr php vendor/bin/phpunit -c phpunit-integration.xml --testsuite integration --testdox
+
+  test:e2e:
+    desc: Run e2e tests that load vocabs and verify DB state (requires dev:start)
+    cmds:
+    - docker compose exec -w {{.CLI_PATH}} openemr php vendor/bin/phpunit -c phpunit-integration.xml --testsuite e2e --testdox
 
   test:all:
-    desc: Run all tests (unit locally, integration in Docker)
+    desc: Run all tests (unit locally, integration and e2e in Docker)
     cmds:
     - task: test:unit
     - task: test:integration
+    - task: test:e2e
 
   test:coverage:
     desc: Run PHPUnit with coverage report
