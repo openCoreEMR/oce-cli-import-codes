@@ -3,10 +3,20 @@ name: Build PHAR
 on:
   # Manual trigger
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Git tag to attach PHAR to, e.g. v0.1.0 (leave empty for artifact only)
+        required: false
+        type: string
 
-  # Trigger when a release is created
-  release:
-    types: [created]
+  # Called by release-please workflow after release creation
+  # (release events from GITHUB_TOKEN don't trigger other workflows)
+  workflow_call:
+    inputs:
+      tag_name:
+        description: Git tag to attach PHAR to (e.g., v0.1.0)
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -19,6 +29,9 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.tag_name || github.ref }}
+        fetch-tags: true
 
     - name: Setup PHP
       uses: shivammathur/setup-php@v2
@@ -44,6 +57,8 @@ jobs:
 
     - name: Build PHAR
       run: php build.php
+      env:
+        BUILD_VERSION: ${{ inputs.tag_name }}
 
     - name: Test PHAR
       run: |
@@ -51,21 +66,22 @@ jobs:
         ./build/oce-import-codes.phar --help
 
     - name: Create versioned PHAR
-      if: github.event_name == 'release'
+      if: inputs.tag_name
       run: |
-        VERSION=${{ github.event.release.tag_name }}
+        VERSION=${{ inputs.tag_name }}
         cp build/oce-import-codes.phar build/oce-import-codes-${VERSION}.phar
 
     - name: Upload PHAR to release
-      if: github.event_name == 'release'
+      if: inputs.tag_name
       uses: softprops/action-gh-release@v2
       with:
+        tag_name: ${{ inputs.tag_name }}
         files: |
           build/oce-import-codes.phar
-          build/oce-import-codes-${{ github.event.release.tag_name }}.phar
+          build/oce-import-codes-${{ inputs.tag_name }}.phar
 
     - name: Upload PHAR artifact (manual trigger)
-      if: github.event_name == 'workflow_dispatch'
+      if: ${{ !inputs.tag_name }}
       uses: actions/upload-artifact@v4
       with:
         name: oce-import-codes-phar

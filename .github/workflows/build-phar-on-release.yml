@@ -1,0 +1,11 @@
+name: Build PHAR on Release
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build-phar:
+    uses: ./.github/workflows/build-phar.yml
+    with:
+      tag_name: ${{ github.event.release.tag_name }}
