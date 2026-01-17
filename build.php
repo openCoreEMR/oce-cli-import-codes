@@ -27,7 +27,13 @@ if (ini_get('phar.readonly')) {
 $buildDir = __DIR__ . '/build';
 $pharFile = $buildDir . '/oce-import-codes.phar';
 
-echo "Building oce-import-codes.phar...\n";
+// Determine version: BUILD_VERSION env var > git describe > fallback
+$version = getenv('BUILD_VERSION') ?: null;
+if (!$version) {
+    $version = trim((string) shell_exec('git describe --tags 2>/dev/null')) ?: 'dev';
+}
+
+echo "Building oce-import-codes.phar (version: $version)...\n";
 
 // Create build directory
 if (!is_dir($buildDir)) {
@@ -45,7 +51,7 @@ try {
     // Set metadata
     $phar->setMetadata([
         'name' => 'oce-import-codes',
-        'version' => '1.0.0',
+        'version' => $version,
         'created' => date('Y-m-d H:i:s')
     ]);
 
