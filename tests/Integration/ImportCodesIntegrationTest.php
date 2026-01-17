@@ -58,7 +58,7 @@ class ImportCodesIntegrationTest extends TestCase
         try {
             $this->connector->initialize(self::OPENEMR_PATH, self::SITE);
             $this->openemrAvailable = true;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $this->markTestSkipped('OpenEMR initialization failed: ' . $e->getMessage());
         }
     }

@@ -55,7 +55,7 @@ class VocabularyImportE2ETest extends TestCase
         $this->connector = new OpenEMRConnector();
         try {
             $this->connector->initialize(self::OPENEMR_PATH, self::SITE);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $this->markTestSkipped('OpenEMR initialization failed: ' . $e->getMessage());
         }
 

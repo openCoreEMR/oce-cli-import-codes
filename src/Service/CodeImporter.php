@@ -243,7 +243,7 @@ class CodeImporter
             );
 
             return $result && $result['count'] > 0;
-        } catch (\Exception) {
+        } catch (\Throwable) {
             // If query fails, assume not loaded to be safe
             return false;
         }
@@ -412,7 +412,7 @@ class CodeImporter
 
         try {
             sqlQuery("SELECT RELEASE_LOCK(?)", [$this->currentLockName]);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             // Log error but don't throw exception during cleanup
             error_log("Warning: Failed to release database lock '{$this->currentLockName}': " . $e->getMessage());
         } finally {

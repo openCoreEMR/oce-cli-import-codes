@@ -182,7 +182,7 @@ class ImportCodesCommand extends Command
         // Initialize OpenEMR connection
         try {
             $this->connector->initialize($openemrPath, $site);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $this->logJson('error', 'Failed to initialize OpenEMR connection', ['error' => $e->getMessage()]);
             return Command::FAILURE;
         }
@@ -359,7 +359,7 @@ class ImportCodesCommand extends Command
 
             $this->logJson('success', 'Import completed successfully');
             return Command::SUCCESS;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $this->logJson('error', 'Import failed', ['error' => $e->getMessage()]);
 
             // Cleanup on error
@@ -383,7 +383,7 @@ class ImportCodesCommand extends Command
         if (!$dryRun) {
             try {
                 $this->importer->import($codeType, $isWindows, $usExtension, $filePath);
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 // Check if this is a lock acquisition failure
                 if (str_contains($e->getMessage(), 'Failed to acquire database lock')) {
                     throw new CodeImportException("Import failed: " . $e->getMessage());
