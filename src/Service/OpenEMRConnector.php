@@ -13,6 +13,7 @@
 
 namespace OpenCoreEMR\CLI\ImportCodes\Service;
 
+use OpenCoreEMR\CLI\ImportCodes\Config\ConfigAccessorInterface;
 use OpenCoreEMR\CLI\ImportCodes\Exception\OpenEMRConnectorException;
 
 class OpenEMRConnector
@@ -20,6 +21,11 @@ class OpenEMRConnector
     private string $openemrPath;
     private string $site;
     private bool $initialized = false;
+
+    public function __construct(
+        private readonly ConfigAccessorInterface $config
+    ) {
+    }
 
     /**
      * Initialize connection to OpenEMR
@@ -52,7 +58,7 @@ class OpenEMRConnector
         require_once $standardTablesPath;
 
         // Verify database connection (using OpenEMR's own validation method)
-        if (!isset($GLOBALS['dbh']) || !$GLOBALS['dbh']) {
+        if (!$this->config->get('dbh')) {
             throw new OpenEMRConnectorException(
                 "OpenEMR database connection failed - " .
                 "check database configuration and ensure MySQL is running"
@@ -60,7 +66,8 @@ class OpenEMRConnector
         }
 
         // Verify ADODB connection is working
-        if (!isset($GLOBALS['adodb']['db']) || !$GLOBALS['adodb']['db']) {
+        $adodb = $this->config->get('adodb');
+        if (!is_array($adodb) || !isset($adodb['db']) || !$adodb['db']) {
             throw new OpenEMRConnectorException("OpenEMR ADODB database connection not established");
         }
 
@@ -111,7 +118,8 @@ class OpenEMRConnector
             throw new OpenEMRConnectorException("OpenEMR connector not initialized");
         }
 
-        return $GLOBALS['temporary_files_dir'] ?? sys_get_temp_dir();
+        $tempDir = $this->config->getString('temporary_files_dir');
+        return $tempDir !== '' ? $tempDir : sys_get_temp_dir();
     }
 
     /**

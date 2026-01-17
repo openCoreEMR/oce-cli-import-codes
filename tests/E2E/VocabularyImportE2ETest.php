@@ -17,6 +17,7 @@
 namespace OpenCoreEMR\CLI\ImportCodes\Tests\E2E;
 
 use OpenCoreEMR\CLI\ImportCodes\Command\ImportCodesCommand;
+use OpenCoreEMR\CLI\ImportCodes\Config\GlobalsAccessor;
 use OpenCoreEMR\CLI\ImportCodes\Service\OpenEMRConnector;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
@@ -52,7 +53,7 @@ class VocabularyImportE2ETest extends TestCase
             );
         }
 
-        $this->connector = new OpenEMRConnector();
+        $this->connector = new OpenEMRConnector(new GlobalsAccessor());
         try {
             $this->connector->initialize(self::OPENEMR_PATH, self::SITE);
         } catch (\Throwable $e) {
@@ -268,7 +269,7 @@ class VocabularyImportE2ETest extends TestCase
         $this->assertEquals(0, $result);
 
         // Verify temp directory was cleaned up
-        $tempDir = $GLOBALS['temporary_files_dir'] . '/CQM_VALUESET';
+        $tempDir = $this->connector->getTempDir() . '/CQM_VALUESET';
         $this->assertDirectoryDoesNotExist($tempDir, 'Temp directory should be removed after cleanup');
     }
 

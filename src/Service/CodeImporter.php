@@ -13,6 +13,7 @@
 
 namespace OpenCoreEMR\CLI\ImportCodes\Service;
 
+use OpenCoreEMR\CLI\ImportCodes\Config\ConfigAccessorInterface;
 use OpenCoreEMR\CLI\ImportCodes\Exception\CodeImportException;
 use OpenCoreEMR\CLI\ImportCodes\Exception\FileSystemException;
 use OpenCoreEMR\CLI\ImportCodes\Exception\DatabaseLockException;
@@ -23,6 +24,11 @@ class CodeImporter
     private int $lockRetryAttempts = 10;
     private int $lockRetryDelaySeconds = 30;
     private bool $waitedForLock = false;
+
+    public function __construct(
+        private readonly ConfigAccessorInterface $config
+    ) {
+    }
 
     /**
      * Validate temporary directory is writable
@@ -283,11 +289,12 @@ class CodeImporter
      */
     public function getStagingFiles(string $type): array
     {
-        if (!isset($GLOBALS['temporary_files_dir']) || !is_string($GLOBALS['temporary_files_dir'])) {
+        $tempDir = $this->config->getString('temporary_files_dir');
+        if ($tempDir === '') {
             return [];
         }
 
-        $stagingDir = $GLOBALS['temporary_files_dir'] . '/' . $type;
+        $stagingDir = $tempDir . '/' . $type;
         if (!is_dir($stagingDir)) {
             return [];
         }
