@@ -39,6 +39,7 @@ class ImportCodesCommandTest extends TestCase
         $this->detectorMock = $this->createMock(MetadataDetector::class);
 
         $this->command = new ImportCodesCommand(
+            null,
             $this->importerMock,
             $this->connectorMock,
             $this->detectorMock

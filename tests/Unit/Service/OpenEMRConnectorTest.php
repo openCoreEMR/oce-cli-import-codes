@@ -13,6 +13,7 @@
 
 namespace OpenCoreEMR\CLI\ImportCodes\Tests\Unit\Service;
 
+use OpenCoreEMR\CLI\ImportCodes\Config\GlobalsAccessor;
 use OpenCoreEMR\CLI\ImportCodes\Exception\OpenEMRConnectorException;
 use OpenCoreEMR\CLI\ImportCodes\Service\OpenEMRConnector;
 use PHPUnit\Framework\Attributes\Test;
@@ -24,7 +25,7 @@ class OpenEMRConnectorTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->connector = new OpenEMRConnector();
+        $this->connector = new OpenEMRConnector(new GlobalsAccessor());
     }
 
     #[Test]

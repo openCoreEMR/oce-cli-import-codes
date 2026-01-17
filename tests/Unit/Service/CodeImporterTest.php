@@ -13,6 +13,7 @@
 
 namespace OpenCoreEMR\CLI\ImportCodes\Tests\Unit\Service;
 
+use OpenCoreEMR\CLI\ImportCodes\Config\GlobalsAccessor;
 use OpenCoreEMR\CLI\ImportCodes\Exception\CodeImportException;
 use OpenCoreEMR\CLI\ImportCodes\Exception\FileSystemException;
 use OpenCoreEMR\CLI\ImportCodes\Service\CodeImporter;
@@ -25,7 +26,7 @@ class CodeImporterTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->importer = new CodeImporter();
+        $this->importer = new CodeImporter(new GlobalsAccessor());
     }
 
     #[Test]

@@ -22,6 +22,7 @@
 namespace OpenCoreEMR\CLI\ImportCodes\Tests\E2E;
 
 use OpenCoreEMR\CLI\ImportCodes\Command\ImportCodesCommand;
+use OpenCoreEMR\CLI\ImportCodes\Config\GlobalsAccessor;
 use OpenCoreEMR\CLI\ImportCodes\Service\OpenEMRConnector;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -61,7 +62,7 @@ class RealVocabularyImportE2ETest extends TestCase
             $this->markTestSkipped('OpenEMR not available. Run inside Docker: task dev:start');
         }
 
-        $this->connector = new OpenEMRConnector();
+        $this->connector = new OpenEMRConnector(new GlobalsAccessor());
         try {
             $this->connector->initialize(self::OPENEMR_PATH, self::SITE);
         } catch (\Throwable $e) {

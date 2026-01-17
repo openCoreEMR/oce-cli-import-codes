@@ -17,6 +17,7 @@
 namespace OpenCoreEMR\CLI\ImportCodes\Tests\Integration;
 
 use OpenCoreEMR\CLI\ImportCodes\Command\ImportCodesCommand;
+use OpenCoreEMR\CLI\ImportCodes\Config\GlobalsAccessor;
 use OpenCoreEMR\CLI\ImportCodes\Service\CodeImporter;
 use OpenCoreEMR\CLI\ImportCodes\Service\MetadataDetector;
 use OpenCoreEMR\CLI\ImportCodes\Service\OpenEMRConnector;
@@ -54,7 +55,7 @@ class ImportCodesIntegrationTest extends TestCase
         }
 
         // Try to initialize the connector
-        $this->connector = new OpenEMRConnector();
+        $this->connector = new OpenEMRConnector(new GlobalsAccessor());
         try {
             $this->connector->initialize(self::OPENEMR_PATH, self::SITE);
             $this->openemrAvailable = true;
@@ -92,7 +93,7 @@ class ImportCodesIntegrationTest extends TestCase
     #[Test]
     public function codeImporterCanCheckIfVocabularyLoaded(): void
     {
-        $importer = new CodeImporter();
+        $importer = new CodeImporter(new GlobalsAccessor());
 
         // Should not throw exception when database is available
         $result = $importer->isVocabularyLoaded('RXNORM');
@@ -103,7 +104,7 @@ class ImportCodesIntegrationTest extends TestCase
     #[Test]
     public function codeImporterCanCheckIfAlreadyLoaded(): void
     {
-        $importer = new CodeImporter();
+        $importer = new CodeImporter(new GlobalsAccessor());
 
         // Check with fake data - should return false
         $result = $importer->isAlreadyLoaded(

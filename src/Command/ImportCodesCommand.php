@@ -13,6 +13,8 @@
 
 namespace OpenCoreEMR\CLI\ImportCodes\Command;
 
+use OpenCoreEMR\CLI\ImportCodes\Config\ConfigAccessorInterface;
+use OpenCoreEMR\CLI\ImportCodes\Config\GlobalsAccessor;
 use OpenCoreEMR\CLI\ImportCodes\Service\CodeImporter;
 use OpenCoreEMR\CLI\ImportCodes\Service\OpenEMRConnector;
 use OpenCoreEMR\CLI\ImportCodes\Service\MetadataDetector;
@@ -31,12 +33,19 @@ class ImportCodesCommand extends Command
     private ?OutputInterface $output = null;
 
     public function __construct(
-        private readonly CodeImporter $importer = new CodeImporter(),
-        private readonly OpenEMRConnector $connector = new OpenEMRConnector(),
+        ?ConfigAccessorInterface $config = null,
+        ?CodeImporter $importer = null,
+        ?OpenEMRConnector $connector = null,
         private readonly MetadataDetector $detector = new MetadataDetector()
     ) {
+        $config ??= new GlobalsAccessor();
+        $this->importer = $importer ?? new CodeImporter($config);
+        $this->connector = $connector ?? new OpenEMRConnector($config);
         parent::__construct();
     }
+
+    private readonly CodeImporter $importer;
+    private readonly OpenEMRConnector $connector;
 
     protected function configure()
     {
