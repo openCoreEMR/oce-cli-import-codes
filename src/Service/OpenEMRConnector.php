@@ -71,7 +71,7 @@ class OpenEMRConnector
             } else {
                 throw new OpenEMRConnectorException("OpenEMR database functions not available");
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             throw new OpenEMRConnectorException("OpenEMR database connection test failed: " . $e->getMessage());
         }
 

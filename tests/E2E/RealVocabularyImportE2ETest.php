@@ -64,7 +64,7 @@ class RealVocabularyImportE2ETest extends TestCase
         $this->connector = new OpenEMRConnector();
         try {
             $this->connector->initialize(self::OPENEMR_PATH, self::SITE);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $this->markTestSkipped('OpenEMR initialization failed: ' . $e->getMessage());
         }
     }
@@ -307,7 +307,7 @@ class RealVocabularyImportE2ETest extends TestCase
 
             $result = $this->connector->querySql("SELECT COUNT(*) as cnt FROM `{$tableName}`");
             return (int) ($result['cnt'] ?? 0);
-        } catch (\Exception) {
+        } catch (\Throwable) {
             return 0;
         }
     }

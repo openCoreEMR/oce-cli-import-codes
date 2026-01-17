@@ -53,7 +53,7 @@ try {
     $application->add(new ImportCodesCommand());
     $application->setDefaultCommand('import', true);
     $application->run();
-} catch (Exception $e) {
+} catch (Throwable $e) {
     echo "Error: " . $e->getMessage() . "\n";
     exit(1);
 }

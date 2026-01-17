@@ -80,7 +80,7 @@ try {
     echo "   Size: " . number_format(filesize($pharFile)) . " bytes\n";
     echo "   Usage: ./build/oce-import-codes.phar RXNORM /path/to/rxnorm.zip --openemr-path=/var/www/openemr\n";
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     echo "❌ Error building PHAR: " . $e->getMessage() . "\n";
     exit(1);
 }
