@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.9.0](https://github.com/openCoreEMR/oce-cli-import-codes/compare/0.1.1...0.9.0) (2026-01-18)
+
+
+### Bug Fixes
+
+* **ci:** chain build-phar workflow from release-please ([#21](https://github.com/openCoreEMR/oce-cli-import-codes/issues/21)) ([69b514f](https://github.com/openCoreEMR/oce-cli-import-codes/commit/69b514fc86f50fb1878437f0ae619a0dd454cbd4)), closes [#20](https://github.com/openCoreEMR/oce-cli-import-codes/issues/20)
+* **CodeImporter:** identify lock and lock holder ([#5](https://github.com/openCoreEMR/oce-cli-import-codes/issues/5)) ([d8d8bfb](https://github.com/openCoreEMR/oce-cli-import-codes/commit/d8d8bfb7211a2ed88b256add91b255aab87dd5ed))
+
+
+### Miscellaneous Chores
+
+* **release:** 0.9.0 ([78f4af1](https://github.com/openCoreEMR/oce-cli-import-codes/commit/78f4af199b827b90e854bc9f0c031a57d90a0a64))
+
+
+### Code Refactoring
+
+* add GlobalsAccessor abstraction for OpenEMR globals access ([#23](https://github.com/openCoreEMR/oce-cli-import-codes/issues/23)) ([954ac68](https://github.com/openCoreEMR/oce-cli-import-codes/commit/954ac68eac181959765333af77cbf47812323f18)), closes [#19](https://github.com/openCoreEMR/oce-cli-import-codes/issues/19)
+* catch Throwable instead of Exception ([#25](https://github.com/openCoreEMR/oce-cli-import-codes/issues/25)) ([917c70d](https://github.com/openCoreEMR/oce-cli-import-codes/commit/917c70d7048fc54a7ea509235b340aab7c2324bb)), closes [#24](https://github.com/openCoreEMR/oce-cli-import-codes/issues/24)
+
 ## [0.1.1](https://github.com/openCoreEMR/oce-cli-import-codes/compare/0.1.0...0.1.1) (2026-01-16)
 
 
