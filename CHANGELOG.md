@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/openCoreEMR/oce-cli-import-codes/compare/0.9.0...0.9.1) (2026-01-19)
+
+
+### Bug Fixes
+
+* **ImportCodesCommand:** only check supported_external_dataloads for ICD types ([#26](https://github.com/openCoreEMR/oce-cli-import-codes/issues/26)) ([41515b4](https://github.com/openCoreEMR/oce-cli-import-codes/commit/41515b443735bc712a2750ab84f7665fd897bbe3))
+
 ## [0.9.0](https://github.com/openCoreEMR/oce-cli-import-codes/compare/0.1.1...0.9.0) (2026-01-18)
 
 
