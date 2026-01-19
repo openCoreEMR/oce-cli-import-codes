@@ -232,7 +232,11 @@ class ImportCodesCommand extends Command
             $this->logJson('warning', 'DRY RUN MODE - No database changes will be made');
         }
 
-        if (!$metadata['from_database']) {
+        // Only ICD code types use the supported_external_dataloads table for validation.
+        // Other types (RXNORM, SNOMED, CQM_VALUESET) are validated by filename patterns only.
+        $usesExternalDataloads = in_array($codeType, ['ICD9', 'ICD10'], true);
+
+        if ($usesExternalDataloads && !$metadata['from_database']) {
             if (!$allowUnsupported) {
                 $this->logJson('error', 'File not in supported_external_dataloads table', [
                     'filename' => basename($filePath),
