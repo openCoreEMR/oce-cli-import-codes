@@ -1,5 +1,6 @@
 {
   "release-type": "php",
+  "annotated-tag": true,
   "packages": {
     ".": {
       "package-name": "oce-cli-import-codes",
