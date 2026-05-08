@@ -79,7 +79,11 @@ class OpenEMRConnector
                 throw new OpenEMRConnectorException("OpenEMR database functions not available");
             }
         } catch (\Throwable $e) {
-            throw new OpenEMRConnectorException("OpenEMR database connection test failed: " . $e->getMessage());
+            throw new OpenEMRConnectorException(
+                "OpenEMR database connection test failed: " . $e->getMessage(),
+                $e->getCode(),
+                $e
+            );
         }
 
         $this->initialized = true;
