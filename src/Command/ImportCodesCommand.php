@@ -399,7 +399,7 @@ class ImportCodesCommand extends Command
             } catch (\Throwable $e) {
                 // Check if this is a lock acquisition failure
                 if (str_contains($e->getMessage(), 'Failed to acquire database lock')) {
-                    throw new CodeImportException("Import failed: " . $e->getMessage());
+                    throw new CodeImportException("Import failed: " . $e->getMessage(), $e->getCode(), $e);
                 }
                 // Re-throw other exceptions as-is
                 throw $e;
