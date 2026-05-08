@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.9.2](https://github.com/openCoreEMR/oce-cli-import-codes/compare/0.9.1...0.9.2) (2026-05-08)
+
+
+### Bug Fixes
+
+* **ci:** grant build-phar caller job contents:write permission ([#37](https://github.com/openCoreEMR/oce-cli-import-codes/issues/37)) ([b017d95](https://github.com/openCoreEMR/oce-cli-import-codes/commit/b017d95243e05f5e502aa76eaa72e2efd97f049e))
+
+
+### Dependencies
+
+* **deps-dev:** bump ergebnis/composer-normalize from 2.48.2 to 2.51.0 ([#30](https://github.com/openCoreEMR/oce-cli-import-codes/issues/30)) ([810fc2c](https://github.com/openCoreEMR/oce-cli-import-codes/commit/810fc2c72ea7e2f3d7490e65b383da9398230dd0))
+* **deps-dev:** bump rector/rector from 2.3.1 to 2.4.2 ([#35](https://github.com/openCoreEMR/oce-cli-import-codes/issues/35)) ([adf1f20](https://github.com/openCoreEMR/oce-cli-import-codes/commit/adf1f20866428758099eadf0ad31bf48aab5f1db))
+* **deps:** bump actions/cache from 4 to 5 ([#34](https://github.com/openCoreEMR/oce-cli-import-codes/issues/34)) ([054e7e8](https://github.com/openCoreEMR/oce-cli-import-codes/commit/054e7e838669ff960616b66afb4d883f8d2aa106))
+* **deps:** bump actions/checkout from 4 to 6 ([#29](https://github.com/openCoreEMR/oce-cli-import-codes/issues/29)) ([188ee12](https://github.com/openCoreEMR/oce-cli-import-codes/commit/188ee1212ca53ded29bac24317654448351793b0))
+* **deps:** bump actions/upload-artifact from 4 to 7 ([#31](https://github.com/openCoreEMR/oce-cli-import-codes/issues/31)) ([0155d8d](https://github.com/openCoreEMR/oce-cli-import-codes/commit/0155d8df293b80dc0d486e417d2d9f5e24d3a1f9))
+* **deps:** bump rhysd/actionlint from 1.7.10 to 1.7.12 ([#36](https://github.com/openCoreEMR/oce-cli-import-codes/issues/36)) ([2083e04](https://github.com/openCoreEMR/oce-cli-import-codes/commit/2083e04027cd6c57abac7697b13a34c6e46d739a))
+* **deps:** bump softprops/action-gh-release from 2 to 3 ([#33](https://github.com/openCoreEMR/oce-cli-import-codes/issues/33)) ([f0f5301](https://github.com/openCoreEMR/oce-cli-import-codes/commit/f0f53018ab4316b93d876f83487aa512675ffdde))
+
 ## [0.9.1](https://github.com/openCoreEMR/oce-cli-import-codes/compare/0.9.0...0.9.1) (2026-01-19)
 
 
