@@ -298,16 +298,6 @@ tasks:
     - task: test:integration
     - task: test:e2e
 
-  test:coverage:
-    desc: Run PHPUnit with coverage report
-    cmds:
-    - docker compose run --rm phpunit-coverage
-
-  test:docker:
-    desc: Run PHPUnit tests in Docker
-    cmds:
-    - docker compose run --rm phpunit
-
   # === Development Helpers ===
 
   composer:install:
