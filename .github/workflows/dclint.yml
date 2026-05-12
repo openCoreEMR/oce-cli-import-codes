@@ -1,0 +1,25 @@
+name: dclint
+
+on:
+  push:
+    branches:
+    - main
+    paths:
+    - '**/compose.yml'
+    - '**/compose.yaml'
+    - '**/docker-compose*.yml'
+    - '**/docker-compose*.yaml'
+    - .github/workflows/dclint.yml
+  pull_request:
+    branches:
+    - main
+    paths:
+    - '**/compose.yml'
+    - '**/compose.yaml'
+    - '**/docker-compose*.yml'
+    - '**/docker-compose*.yaml'
+    - .github/workflows/dclint.yml
+
+jobs:
+  dclint:
+    uses: openCoreEMR/github-workflows-public/.github/workflows/dclint.yml@0.0.4

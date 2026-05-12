@@ -1,0 +1,23 @@
+name: Composer Normalize
+
+on:
+  push:
+    branches:
+    - main
+    paths:
+    - composer.json
+    - .github/workflows/composer-normalize.yml
+  pull_request:
+    branches:
+    - main
+    paths:
+    - composer.json
+    - .github/workflows/composer-normalize.yml
+
+jobs:
+  composer-normalize:
+    uses: openCoreEMR/github-workflows-public/.github/workflows/php-composer-script.yml@0.0.4
+    with:
+      name: Normalize composer.json (check)
+      run: composer normalize --dry-run
+      php-version: '8.2'

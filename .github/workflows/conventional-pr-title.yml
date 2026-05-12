@@ -1,0 +1,9 @@
+name: Conventional PR Title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  conventional-pr-title:
+    uses: openCoreEMR/github-workflows-public/.github/workflows/conventional-pr-title.yml@0.0.4

@@ -1,57 +1,76 @@
 # OpenEMR CLI Import Codes - Development Environment
 #
 # Extends OpenEMR's development-easy services with overrides:
-# - Random ports instead of fixed (8300, 9300, etc.)
+# - Random ports bound to 127.0.0.1 (avoid conflicts; never expose dev DB to LAN)
 # - CLI tool mounted into OpenEMR container
 # - PHPUnit services available via profiles
 
+name: oce-cli-import-codes
+
 services:
-  openemr:
+  couchdb:
+    ports: !override
+    - target: 5984
+      host_ip: 127.0.0.1
+      protocol: tcp
+      mode: host
+    - target: 6984
+      host_ip: 127.0.0.1
+      protocol: tcp
+      mode: host
     extends:
       file: vendor/openemr/openemr/docker/development-easy/docker-compose.yml
-      service: openemr
+      service: couchdb
+
+  mysql:
     ports: !override
-    - "80"
-    - "443"
+    - target: 3306
+      host_ip: 127.0.0.1
+      protocol: tcp
+      mode: host
+    extends:
+      file: vendor/openemr/openemr/docker/development-easy/docker-compose.yml
+      service: mysql
+
+  openemr:
     volumes:
     - .:/var/www/localhost/htdocs/openemr/oce-cli-import-codes:rw
+    ports: !override
+    - target: 80
+      host_ip: 127.0.0.1
+      protocol: tcp
+      mode: host
+    - target: 443
+      host_ip: 127.0.0.1
+      protocol: tcp
+      mode: host
     healthcheck:
       test: ["CMD", "curl", "-fsk", "https://localhost:443/"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 3m
-
-  mysql:
     extends:
       file: vendor/openemr/openemr/docker/development-easy/docker-compose.yml
-      service: mysql
-    ports: !override
-    - "3306"
-
-  phpmyadmin:
-    extends:
-      file: vendor/openemr/openemr/docker/development-easy/docker-compose.yml
-      service: phpmyadmin
-    ports: !override
-    - "80"
-
-  couchdb:
-    extends:
-      file: vendor/openemr/openemr/docker/development-easy/docker-compose.yml
-      service: couchdb
-    ports: !override
-    - "5984"
-    - "6984"
+      service: openemr
 
   openldap:
     extends:
       file: vendor/openemr/openemr/docker/development-easy/docker-compose.yml
       service: openldap
 
+  phpmyadmin:
+    ports: !override
+    - target: 80
+      host_ip: 127.0.0.1
+      protocol: tcp
+      mode: host
+    extends:
+      file: vendor/openemr/openemr/docker/development-easy/docker-compose.yml
+      service: phpmyadmin
+
   # PHPUnit test runner
   phpunit:
-    profiles: [test]
     build:
       context: .
       dockerfile: Dockerfile.test
@@ -59,10 +78,10 @@ services:
     - .:/app
     - /app/vendor
     command: vendor/bin/phpunit --testdox
+    profiles: [test]
 
   # PHPUnit with coverage
   phpunit-coverage:
-    profiles: [test]
     build:
       context: .
       dockerfile: Dockerfile.test
@@ -70,9 +89,10 @@ services:
     - .:/app
     - /app/vendor
     - ./htmlcov:/app/htmlcov
-    command: vendor/bin/phpunit --coverage-html htmlcov --coverage-text
     environment:
       XDEBUG_MODE: coverage
+    command: vendor/bin/phpunit --coverage-html htmlcov --coverage-text
+    profiles: [test]
 
 volumes:
   databasevolume: {}
