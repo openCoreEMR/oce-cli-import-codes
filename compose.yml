@@ -3,7 +3,6 @@
 # Extends OpenEMR's development-easy services with overrides:
 # - Random ports bound to 127.0.0.1 (avoid conflicts; never expose dev DB to LAN)
 # - CLI tool mounted into OpenEMR container
-# - PHPUnit services available via profiles
 
 name: oce-cli-import-codes
 
@@ -68,31 +67,6 @@ services:
     extends:
       file: vendor/openemr/openemr/docker/development-easy/docker-compose.yml
       service: phpmyadmin
-
-  # PHPUnit test runner
-  phpunit:
-    build:
-      context: .
-      dockerfile: Dockerfile.test
-    volumes:
-    - .:/app
-    - /app/vendor
-    command: vendor/bin/phpunit --testdox
-    profiles: [test]
-
-  # PHPUnit with coverage
-  phpunit-coverage:
-    build:
-      context: .
-      dockerfile: Dockerfile.test
-    volumes:
-    - .:/app
-    - /app/vendor
-    - ./htmlcov:/app/htmlcov
-    environment:
-      XDEBUG_MODE: coverage
-    command: vendor/bin/phpunit --coverage-html htmlcov --coverage-text
-    profiles: [test]
 
 volumes:
   databasevolume: {}
