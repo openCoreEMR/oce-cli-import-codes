@@ -23,3 +23,10 @@ updates:
   - github-actions
   commit-message:
     prefix: chore(ci)
+  groups:
+    github-workflows-public:
+      patterns:
+      - '*/github-workflows-public/*'
+    github-workflows-internal:
+      patterns:
+      - '*/github-workflows-internal/*'
