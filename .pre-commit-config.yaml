@@ -32,8 +32,8 @@ repos:
     - --indent=2
     exclude: ^compose\.yml$  # Uses Docker Compose !override tags
 
-- repo: https://github.com/rhysd/actionlint
-  rev: v1.7.10
+- repo: https://github.com/openCoreEMR/actionlint
+  rev: v1.7.12-oce.1
   hooks:
   - id: actionlint
 
