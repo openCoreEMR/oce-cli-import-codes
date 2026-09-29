@@ -5,6 +5,10 @@ version: 2
 updates:
   # Monitor Composer dependencies
 - package-ecosystem: composer
+  cooldown:
+    exclude:
+    - openCoreEMR/*
+    - opencoreemr/*
   directory: /
   schedule:
     interval: daily
@@ -15,6 +19,10 @@ updates:
     prefix: fix(deps)
     prefix-development: chore(deps-dev)
 - package-ecosystem: github-actions
+  cooldown:
+    exclude:
+    - openCoreEMR/*
+    - opencoreemr/*
   directory: /
   schedule:
     interval: daily
