@@ -197,8 +197,11 @@ tasks:
     cmds:
     - |
       VOCAB="{{.CLI_ARGS}}"
-      # OpenEMR's temporary_files_dir is /tmp by default (check globals table)
-      TEMP_DIR="/tmp"
+      # OpenEMR sets temporary_files_dir from PHP's sys_get_temp_dir(), so ask
+      # the container's PHP. Fall back to /tmp so an empty answer never
+      # turns the cleanup into rm -rf "/$dir".
+      TEMP_DIR="$(docker compose exec -T openemr php -r 'echo rtrim(sys_get_temp_dir(), "/");' 2>/dev/null)"
+      TEMP_DIR="${TEMP_DIR:-/tmp}"
       truncate_tables() {
         local tables="$1"
         for t in $tables; do

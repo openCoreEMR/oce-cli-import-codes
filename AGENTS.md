@@ -166,7 +166,7 @@ task db:query -- "SELECT * FROM standardized_tables_track"
 
 ### Staging Directory Cleanup
 
-By default, the CLI cleans the staging directory (`/tmp/{CODE_TYPE}/`) after each import. This prevents duplicate imports when running multiple times.
+By default, the CLI cleans the staging directory (`{CODE_TYPE}/` under OpenEMR's `temporary_files_dir`, which follows PHP's `sys_get_temp_dir()` and is usually `/tmp`) after each import. This prevents duplicate imports when running multiple times.
 
 - **Default behavior**: Staging directory is cleaned after successful import
 - **`--no-cleanup`**: Keep staging files for debugging (warning issued about duplicate risk)
@@ -202,7 +202,8 @@ task cli:run -- /path/to/icd10orderfiles.zip --allow-unsupported
 |---------|---------|-------------|
 | `icd10OrderFiles{YEAR}` | `icd10OrderFiles2025_0.zip` | ICD10 CM, effective {YEAR-1}-10-01 |
 | `icd10cm_order_{YEAR}` | `icd10cm_order_2024.txt.zip` | ICD10 CM, effective {YEAR-1}-10-01 |
-| `*{YEAR}*ICD-10-PCS*` | `Zip File 3 2026 ICD-10-PCS Codes File.zip` | ICD10 PCS, effective {YEAR-1}-10-01 |
+| `Zip File <n> {YEAR} ICD-10-PCS` | `Zip File 3 2026 ICD-10-PCS Codes File.zip` | ICD10 PCS, effective {YEAR-1}-10-01 |
+| `zip-file-<n>-{YEAR}-icd-10-pcs` | `zip-file-3-2026-icd-10-pcs-codes-file.zip` | ICD10 PCS, effective {YEAR-1}-10-01 |
 | `icd10orderfiles.zip` | (no year) | ICD10 CM, uses current fiscal year |
 
 ICD codes become effective October 1st, so "2026 codes" have release date 2025-10-01.
