@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.4](https://github.com/openCoreEMR/oce-cli-import-codes/compare/0.9.3...0.9.4) (2026-10-23)
+
+
+### Bug Fixes
+
+* ask container PHP for staging directory and update doc patterns ([3e7a5f4](https://github.com/openCoreEMR/oce-cli-import-codes/commit/3e7a5f41868f9b2af7bc97a4286cd5adaff27338))
+
 ## [0.9.3](https://github.com/openCoreEMR/oce-cli-import-codes/compare/0.9.2...0.9.3) (2026-06-11)
 
 
